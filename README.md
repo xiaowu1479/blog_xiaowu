@@ -256,6 +256,8 @@ php _preview\clean-uploads.php apply
 
 ### 系统更新（后台直接从 GitHub 拉代码）
 
+> **想回到某一版：**后台「按版本回退」那张卡片会列出仓库里的 tag，点「切到这一版」就把站点文件切到那一版。覆盖前一样自动备份、切错了还能用「回滚」退回来；data/ 和 img/uploads/ 一律不动。列表要调 GitHub 接口（匿名每小时 60 次），限流时显示上一次列到的结果。
+
 后台左侧多了「系统更新」。它只做一件事：**从 GitHub 仓库拿最新代码，覆盖服务器上的站点文件**。
 默认仓库 `xiaowu1479/blog_xiaowu`、分支 `main`；换仓库/分支不用改代码，改 `data/update.json` 里的
 `repo` / `branch` 就行。
@@ -447,7 +449,7 @@ node _preview\diag-admin.mjs posts 1440
 # 正文 XSS 转义、老纯文本文章仍能显示、375px 不横向溢出、跑完数据回到原样
 node _preview\check-cats-md.mjs
 
-# 系统更新（30 项）：未登录拦截、页面渲染、真连 GitHub 拿提交、本地包模拟一次真更新、
+# 系统更新（36 项）：未登录拦截、页面渲染、真连 GitHub 拿提交、本地包模拟一次真更新、
 # 保护目录与路径穿越、备份能还原、data/site.db 没被动、版本与台账落盘、
 # data/update.json 不可下载、回滚把改动退回去
 node _preview/test-update.mjs
