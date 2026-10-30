@@ -257,7 +257,7 @@ function update_recent_commits(int $n = 5): array
  *
  * @return array{ok: bool, zip: string, sha: string, bytes: int, source: string, error: string}
  */
-function update_download(string $sha): array
+function update_download(string $sha, string $refPath = '', bool $forceRemote = false): array
 {
     $state = update_state();
     $out   = ['ok' => false, 'zip' => '', 'sha' => $sha, 'bytes' => 0, 'source' => 'GitHub', 'error' => ''];
@@ -272,7 +272,7 @@ function update_download(string $sha): array
     $cacheKey = $sha !== '' ? substr((string) preg_replace('/[^0-9a-f]/', '', $sha), 0, 12) : '';
     $cache    = $cacheDir . '/source-' . $cacheKey . '.zip';
     // 指定了本地包时，本地包优先于缓存（那是明确的「用这个包」指令）
-    $useLocal = $state['localZip'] !== '' && is_file($state['localZip']);
+    $useLocal = !$forceRemote && $state['localZip'] !== '' && is_file($state['localZip']);
     if (!$useLocal && $cacheKey !== '' && is_file($cache) && (int) @filesize($cache) > 200 && @copy($cache, $zip)) {
         $out['ok']     = true;
         $out['zip']    = $zip;
@@ -281,7 +281,7 @@ function update_download(string $sha): array
         return $out;
     }
 
-    if ($state['localZip'] !== '' && is_file($state['localZip'])) {
+    if ($useLocal) {
         if (!@copy($state['localZip'], $zip)) {
             $why = error_get_last();
             $out['error'] = '复制本地包失败：' . $state['localZip']
@@ -295,11 +295,19 @@ function update_download(string $sha): array
         return $out;
     }
 
-    $url = $sha !== ''
-        ? ($state['token'] !== ''
+    if ($refPath !== '') {
+        // 按 tag 取：codeload 支持 refs/tags/<name>，私有仓库走 api 的 zipball
+        $refEnc = str_replace('%2F', '/', rawurlencode($refPath));
+        $url = $state['token'] !== ''
+            ? 'https://api.github.com/repos/' . $state['repo'] . '/zipball/' . $refEnc
+            : 'https://codeload.github.com/' . $state['repo'] . '/zip/' . $refEnc;
+    } else {
+        $url = $sha !== ''
+            ? ($state['token'] !== ''
             ? 'https://api.github.com/repos/' . $state['repo'] . '/zipball/' . $sha
-            : 'https://codeload.github.com/' . $state['repo'] . '/zip/' . $sha)
-        : 'https://codeload.github.com/' . $state['repo'] . '/zip/refs/heads/' . rawurlencode($state['branch']);
+                : 'https://codeload.github.com/' . $state['repo'] . '/zip/' . $sha)
+            : 'https://codeload.github.com/' . $state['repo'] . '/zip/refs/heads/' . rawurlencode($state['branch']);
+    }
 
     $headers = [];
     if ($state['token'] !== '') {
@@ -937,3 +945,80 @@ function update_lock_release(array $lock): void
     }
 }
 
+
+/**
+ * 列 tag（按版本回退要用）。GitHub 限流时把上次的结果吐回来，页面照样能看。
+ *
+ * @return array{ok: bool, tags: array<int, array{name: string, sha: string, short: string}>, at: string, error: string}
+ */
+function update_tags_cached(): array
+{
+    $state  = update_state();
+    $cached = is_array($state['tagList'] ?? null) ? $state['tagList'] : [];
+    $r      = update_api('/repos/' . $state['repo'] . '/tags?per_page=30');
+    if (!$r['ok'] || !is_array($r['json'])) {
+        return ['ok' => false, 'tags' => $cached, 'at' => (string) $state['tagListAt'], 'error' => $r['error']];
+    }
+    $tags = [];
+    foreach ($r['json'] as $item) {
+        if (!is_array($item) || !isset($item['name'])) {
+            continue;
+        }
+        $sha    = (string) ($item['commit']['sha'] ?? '');
+        $tags[] = ['name' => (string) $item['name'], 'sha' => $sha, 'short' => substr($sha, 0, 7)];
+    }
+    $state['tagList']   = $tags;
+    $state['tagListAt'] = date('Y-m-d H:i:s');
+    update_state_save($state);
+    return ['ok' => true, 'tags' => $tags, 'at' => $state['tagListAt'], 'error' => ''];
+}
+
+/**
+ * 切到某个 tag：下载那一版的包 → 解压 → 和现在的文件比对 → 备份 → 覆盖。
+ * 复用「立即更新」那套逻辑，所以受保护目录照样不动、覆盖前照样备份、切错了还能再回滚。
+ *
+ * @return array{ok: bool, error: string, plan: mixed, run: mixed, head: mixed}
+ */
+function update_switch_tag(string $tag): array
+{
+    $out = ['ok' => false, 'error' => '', 'plan' => null, 'run' => null, 'head' => null];
+    if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/', $tag)) {
+        $out['error'] = 'tag 名不合法';
+        return $out;
+    }
+    $head = [
+        'ok'      => true,
+        'sha'     => '',
+        'short'   => $tag,
+        'date'    => '',
+        'message' => 'tag ' . $tag,
+        'author'  => '',
+        'url'     => '',
+        'error'   => '',
+    ];
+    $dl = update_download('', 'refs/tags/' . $tag, true);
+    if (!$dl['ok']) {
+        $out['error'] = $dl['error'] . '（是不是没有这个 tag？）';
+        return $out;
+    }
+    $ex = update_extract($dl['zip']);
+    if (!$ex['ok']) {
+        $out['error'] = $ex['error'];
+        return $out;
+    }
+    $plan  = update_plan($ex['dir']);
+    $state = update_state();
+    $run   = update_apply($ex['dir'], $plan, ['from' => $state['current'] ?? null, 'to' => $head]);
+    $files = update_install_manifest($ex['dir']);
+    update_cleanup_tmp();
+
+    $out['plan'] = $plan;
+    $out['run']  = $run;
+    $out['head'] = $head;
+    $out['ok']   = $run['ok'];
+    if (!$out['ok']) {
+        $out['error'] = implode('；', array_slice($run['errors'], 0, 3));
+    }
+    update_remember_run($head, $run, $files);
+    return $out;
+}

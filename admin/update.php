@@ -184,10 +184,32 @@ function update_action_rollback(): void
     go('index.php?p=update');
 }
 
+/** 把站点文件切到某个 tag 那一版（先备份，可再回滚） */
+function update_action_switch(): void
+{
+    $tag = trim(post_str('tag', 60));
+    $res = update_switch_tag($tag);
+    if (!$res['ok']) {
+        flash('切到 ' . $tag . ' 没成功：' . $res['error'], 'err');
+        go('index.php?p=update');
+    }
+    $run  = $res['run'];
+    $sum  = (int) $run['add'] + (int) $run['mod'] + (int) $run['del'];
+    $path = str_replace('\\', '/', (string) $run['backup']);
+    $path = substr($path, strlen(str_replace('\\', '/', APP_ROOT)) + 1);
+    if ($sum === 0) {
+        flash('现在的内容就是 ' . $tag . '，没动任何文件');
+    } else {
+        flash('已切到 ' . $tag . '：修改 ' . (int) $run['mod'] . ' · 新增 ' . (int) $run['add']
+            . ' · 删除 ' . (int) $run['del'] . '（备份在 ' . $path . '/）');
+    }
+    go('index.php?p=update');
+}
+
 function handle_update_action(): void
 {
     $act = post_str('act', 20);
-    if (!in_array($act, ['check', 'apply', 'rollback'], true)) {
+    if (!in_array($act, ['check', 'apply', 'rollback', 'switch'], true)) {
         err('未知操作');
     }
 
@@ -206,6 +228,9 @@ function handle_update_action(): void
     }
     if ($act === 'apply') {
         update_action_apply();
+    }
+    if ($act === 'switch') {
+        update_action_switch();
     }
     update_action_rollback();
 }
@@ -425,6 +450,43 @@ foreach (update_backup_index() as $b) {
   </div>
 </div>
 <?php endif; ?>
+
+<?php
+$tags     = update_tags_cached();
+$curShort = (string) ($state['current']['short'] ?? '');
+?>
+<div class="card">
+  <h2>按版本回退</h2>
+  <?php if ($tags['tags'] === []): ?>
+    <p class="up-dim">
+      现在列不出 tag<?= $tags['ok'] ? '（仓库里还没打过 tag）' : '（' . h($tags['error']) . '）' ?>。
+      仓库里打过 tag 之后，这里会出现「切到这一版」的按钮。
+    </p>
+  <?php else: ?>
+    <table class="kg-table">
+      <thead>
+        <tr><th style="width:200px">版本</th><th style="width:110px">提交</th><th style="width:110px">操作</th></tr>
+      </thead>
+      <tbody>
+        <?php foreach ($tags['tags'] as $t): ?>
+          <tr>
+            <td><b><?= h($t['name']) ?></b><?php if ($t['name'] === $curShort): ?> <span class="up-tag">当前</span><?php endif; ?></td>
+            <td><code class="up-sha"><?= h($t['short']) ?></code></td>
+            <td>
+              <form method="post" onsubmit="return confirm('把站点文件切换到 <?= h($t['name']) ?> 那一版？\n\n· 覆盖前会自动备份，切错了还能再回滚\n· 那一版之后新增的文件会被删掉\n· data/ 和 img/uploads/ 不动\n\n继续？')">
+                <?= csrf_field() ?>
+                <input type="hidden" name="act" value="switch">
+                <input type="hidden" name="tag" value="<?= h($t['name']) ?>">
+                <button type="submit" class="up-link-btn">切到这一版</button>
+              </form>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+    <p class="up-dim" style="margin:8px 0 0">列表来自 GitHub（<?= h($tags['at']) ?>）。切过去之后，「当前版本」会显示 tag 名。</p>
+  <?php endif; ?>
+</div>
 
 <div class="card">
   <h2>这个更新程序怎么工作</h2>
