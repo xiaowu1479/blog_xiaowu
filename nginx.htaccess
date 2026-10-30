@@ -1,0 +1,20 @@
+# 由 phpstudy 生成的 vhost 通过 `include` 引入本文件（位于 location / 内）
+# 作用：禁止直接访问 data/ 与 lib/，以及数据库等敏感文件
+# 注意：nginx 不读 .htaccess，所以这些规则必须写在这里
+
+# 手改模板/样式后要能立刻看到效果：静态文件每次都回源校验（没变就是 304，几乎不费流量），
+# 避免浏览器拿着旧的 HTML / CSS / JS 以为是新版本。放在这里是因为 include 落在 location / 内。
+add_header Cache-Control "no-cache" always;
+
+# 开发目录不对外：_preview 里有会改数据库的小脚本，_backup 里有旧库和素材
+location ~ ^/(_preview|_backup)/ {
+    return 403;
+}
+
+location ~ ^/(data|lib)/ {
+    return 403;
+}
+
+location ~* \.(db|db-wal|db-shm|sqlite|sqlite3|json|lock)$ {
+    return 403;
+}

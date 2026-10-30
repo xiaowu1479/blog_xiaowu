@@ -1,0 +1,91 @@
+/**
+ * css/md.css —— Markdown 正文的排版（后台预览 + 前台文章正文共用）
+ *
+ * 只排版 .md-body 里面的东西，不碰全局选择器，所以引入到后台也不会污染后台样式。
+ * 颜色优先用站点变量，取不到就退回中性色（后台没有 --ui-* 变量）。
+ */
+.md-body {
+  font-size: 15px;
+  line-height: 1.85;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  margin: 1.5em 0 .6em;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.md-body h1 { font-size: 1.5em; }
+.md-body h2 { font-size: 1.25em; }
+.md-body h3 { font-size: 1.1em; }
+.md-body h4 { font-size: 1em; }
+
+.md-body p { margin: 0 0 .95em; }
+
+.md-body a {
+  color: var(--ui-accent, #2b6cb0);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+.md-body a:hover { opacity: .75; }
+
+.md-body code {
+  padding: .14em .38em;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  font-size: .88em;
+  background: var(--ui-card-2, rgba(0, 0, 0, .06));
+}
+
+.md-body pre {
+  margin: 0 0 1.1em;
+  padding: 12px 14px;
+  border-radius: 9px;
+  overflow-x: auto;
+  background: var(--ui-card-2, rgba(0, 0, 0, .06));
+}
+.md-body pre code {
+  display: block;
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+.md-body blockquote {
+  margin: 0 0 1.1em;
+  padding: .1em 0 .1em 14px;
+  border-left: 3px solid var(--ui-line, rgba(0, 0, 0, .16));
+  color: var(--ui-muted, #6b7280);
+}
+.md-body blockquote > :last-child { margin-bottom: 0; }
+
+.md-body ul,
+.md-body ol { margin: 0 0 1.1em; padding-left: 1.45em; }
+.md-body li { margin: .28em 0; }
+.md-body li > ul,
+.md-body li > ol { margin: .3em 0; }
+
+.md-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 9px;
+  vertical-align: middle;
+}
+
+.md-body hr {
+  height: 1px;
+  margin: 1.7em 0;
+  border: 0;
+  background: var(--ui-line, rgba(0, 0, 0, .16));
+}
+
+.md-body del { opacity: .6; }
