@@ -267,9 +267,25 @@ function update_download(string $sha): array
     $zip = $tmpDir . '/source.zip';
     @unlink($zip);
 
+    // 同一个版本反复点「检查更新」时不用重复下载（GitHub 包 10MB 上下，慢网络里差别很大）
+    $cacheDir = DATA_DIR . '/update-cache';
+    $cacheKey = $sha !== '' ? substr((string) preg_replace('/[^0-9a-f]/', '', $sha), 0, 12) : '';
+    $cache    = $cacheDir . '/source-' . $cacheKey . '.zip';
+    // 指定了本地包时，本地包优先于缓存（那是明确的「用这个包」指令）
+    $useLocal = $state['localZip'] !== '' && is_file($state['localZip']);
+    if (!$useLocal && $cacheKey !== '' && is_file($cache) && (int) @filesize($cache) > 200 && @copy($cache, $zip)) {
+        $out['ok']     = true;
+        $out['zip']    = $zip;
+        $out['bytes']  = (int) @filesize($zip);
+        $out['source'] = '上次下载的包';
+        return $out;
+    }
+
     if ($state['localZip'] !== '' && is_file($state['localZip'])) {
         if (!@copy($state['localZip'], $zip)) {
-            $out['error'] = '复制本地包失败：' . $state['localZip'];
+            $why = error_get_last();
+            $out['error'] = '复制本地包失败：' . $state['localZip']
+                . '（写到 ' . $zip . '；' . ($why['message'] ?? '系统没给原因') . '）';
             return $out;
         }
         $out['ok']     = true;
@@ -302,6 +318,18 @@ function update_download(string $sha): array
     $out['ok']    = true;
     $out['zip']   = $zip;
     $out['bytes'] = $r['bytes'];
+
+    // 存一份，下次查同一个版本直接用
+    if ($sha !== '') {
+        update_dir($cacheDir);
+        @copy($zip, $cache);
+        foreach ((array) glob($cacheDir . '/source-*.zip') as $old) {
+            if ($old !== $cache) {
+                @unlink($old);
+            }
+        }
+    }
+
     return $out;
 }
 
@@ -875,3 +903,37 @@ function update_cleanup_tmp(): void
 {
     rrmdir(update_file('tmp'));
 }
+
+/**
+ * 同一时间只允许一个人跑更新。
+ * 下载 10MB 上下要几十秒，这期间又点一次的话两个请求会互相踩（还会抢同一个临时文件）。
+ *
+ * @return array{ok: bool, handle: mixed, error: string}
+ */
+function update_lock_acquire(): array
+{
+    $out = ['ok' => false, 'handle' => null, 'error' => ''];
+    $fh  = @fopen(DATA_DIR . '/update.lock', 'c');
+    if ($fh === false) {
+        $out['error'] = '建不了锁文件（data/ 不可写？）';
+        return $out;
+    }
+    if (!flock($fh, LOCK_EX | LOCK_NB)) {
+        fclose($fh);
+        $out['error'] = '上一次检查/更新还在跑（多半在下载），过十几秒再点一次';
+        return $out;
+    }
+    $out['ok']     = true;
+    $out['handle'] = $fh;
+    return $out;
+}
+
+/** @param array{ok: bool, handle: mixed, error: string} $lock */
+function update_lock_release(array $lock): void
+{
+    if (is_resource($lock['handle'] ?? null)) {
+        @flock($lock['handle'], LOCK_UN);
+        @fclose($lock['handle']);
+    }
+}
+

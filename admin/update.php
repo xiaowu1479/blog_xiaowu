@@ -187,16 +187,27 @@ function update_action_rollback(): void
 function handle_update_action(): void
 {
     $act = post_str('act', 20);
+    if (!in_array($act, ['check', 'apply', 'rollback'], true)) {
+        err('未知操作');
+    }
+
+    // 同一时间只允许一个人跑：下载要几十秒，重复点会互相踩
+    $lock = update_lock_acquire();
+    if (!$lock['ok']) {
+        flash($lock['error'], 'err');
+        go('index.php?p=update');
+    }
+    register_shutdown_function(static function () use ($lock): void {
+        update_lock_release($lock);
+    });
+
     if ($act === 'check') {
         update_action_check();
     }
     if ($act === 'apply') {
         update_action_apply();
     }
-    if ($act === 'rollback') {
-        update_action_rollback();
-    }
-    err('未知操作');
+    update_action_rollback();
 }
 
 /* ============================ 页面 ============================ */

@@ -290,7 +290,21 @@ php _preview\clean-uploads.php apply
 - **公司代理 / 自签证书：** 把代理的根证书（PEM）放到 `data/cacert.local.pem`，会拼在官方证书包后面一起用；
   没这个文件就只用 `lib/cacert.pem`。
 - **服务器没外网：** 把源码包（GitHub zipball 或自己 `zip -r` 打的包）放上去，路径填进
-  `"localZip"`，更新时只读本地包，不联网。
+  `"localZip"`，更新时只读本地包，不联网（比缓存和下载都优先）。
+
+两件省心的小事：
+
+- **一次只跑一个。** 下载要几十秒，这期间再点一次会提示「上一次还在跑」，不会两个请求互相踩。
+- **同一个版本只下一次。** 包存在 `data/update-cache/`，再查同一个 commit 直接用，不重复拉 10MB。
+
+**如果报 504 / 页面刷出来是空的：** nginx 的 `fastcgi_read_timeout` 默认只有 60 秒，慢网络下
+下载会超过它（PHP 那边其实还在跑完）。给这个站点加一行就好：
+
+```nginx
+location ~ \.php$ {
+    fastcgi_read_timeout 180s;   # 系统更新要下载 + 解压 + 逐文件比对
+}
+```
 
 ## 三、内容是怎么流到前台的
 
