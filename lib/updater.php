@@ -23,7 +23,8 @@ const UPDATE_REPO_DEFAULT   = 'xiaowu1479/blog_xiaowu';
 const UPDATE_BRANCH_DEFAULT = 'main';
 const UPDATE_ZIP_MAX        = 33554432;   // 压缩包上限 32MB
 const UPDATE_FILE_MAX       = 5000;       // 解压文件数上限
-const UPDATE_KEEP_BACKUPS   = 3;          // 保留最近几份更新备份
+const UPDATE_KEEP_BACKUPS   = 2;          // 保留最近几份更新备份
+const UPDATE_KEEP_HISTORY   = 2;          // 更新历史只留最近几条
 
 /** 永不覆盖/删除的目录（相对站点根） */
 function update_protected_prefixes(): array
@@ -855,7 +856,7 @@ function update_rollback(string $dirName): array
     ];
     $history = is_array($state['history']) ? $state['history'] : [];
     array_unshift($history, $entry);
-    $state['history'] = array_slice($history, 0, 10);
+    $state['history'] = array_slice($history, 0, UPDATE_KEEP_HISTORY);
     $state['lastRun'] = $entry;
     update_state_save($state);
 
@@ -959,7 +960,7 @@ function update_remember_run(array $head, array $run, int $files): void
     ];
     $history = is_array($state['history']) ? $state['history'] : [];
     array_unshift($history, $state['lastRun']);
-    $state['history'] = array_slice($history, 0, 10);
+    $state['history'] = array_slice($history, 0, UPDATE_KEEP_HISTORY);
     update_state_save($state);
 }
 

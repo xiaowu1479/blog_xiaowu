@@ -552,7 +552,7 @@ foreach (update_backup_index() as $b) {
         <tr><th style="width:150px">时间</th><th style="width:130px">版本</th><th>变化</th><th style="width:210px">备份</th><th style="width:64px">操作</th></tr>
       </thead>
       <tbody>
-      <?php foreach (array_slice($state['history'], 0, 6) as $run): ?>
+      <?php foreach (array_slice($state['history'], 0, UPDATE_KEEP_HISTORY) as $run): ?>
         <tr>
           <td><span class="up-dim"><?= h((string) $run['at']) ?></span></td>
           <td>
