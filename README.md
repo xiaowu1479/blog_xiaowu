@@ -108,6 +108,20 @@ php -S 127.0.0.1:8099 router.php
 **只想看界面、不装 PHP**：直接双击 `index.html`。`js/site.js` 检测到 `file://` 就跳过接口、
 使用文件里内置的默认内容，页面照常显示（只是后台改动不会体现）。
 
+**推送报 `Failed to connect to github.com:443`？**
+
+本机 `hosts` 里有 Steamcommunity_302 写的 `127.0.0.1 github.com #S302`，加速服务没起来时，
+git 会去连 `127.0.0.1:443` 然后失败。不用改 hosts，查一下真实 IP 再单独给这次命令指定：
+
+```powershell
+nslookup github.com 223.5.5.5          # 例如返回 20.205.243.166
+
+git -c http.curloptResolve="github.com:443:20.205.243.166" push -u origin main
+```
+
+`http.curloptResolve` 只对当前命令生效，不写全局配置；IP 变了就重新查。也可以把
+Steamcommunity_302 的加速重新打开，或关掉它并清理 hosts 里的 `#S302` 段（需要管理员权限）。
+
 ## 二、后台怎么用
 
 本机现有站点的账号是 `admin` / `admin123`（早期自动灌入的默认值）；
