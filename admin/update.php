@@ -79,8 +79,14 @@ function update_action_check(): void
         // 台账一致才敢直接说「已是最新」；不一致就继续下载比对，让计划里列出来。
         $drift = update_local_drift();
         if ($drift['ok'] && $drift['changed'] === []) {
+            // 文件没漂移，但 HTML 里的 css/js 版本号可能还是旧的（比如上一版更新程序装的）。
+            // 顺手刷一遍，并同步台账，避免下一次检查把这次刷新误判成“被手改”。
+            $bumped = update_bump_assets();
+            if ($bumped > 0) {
+                update_manifest_refresh_local();
+            }
             update_remember_check($head, null, '已是最新版本（本地文件与台账一致）');
-            flash('已是最新版本（' . $head['short'] . '）');
+            flash('已是最新版本（' . $head['short'] . '）' . ($bumped > 0 ? '，已刷新 ' . $bumped . ' 个页面的资源版本号' : ''));
             go('index.php?p=update');
         }
         $driftNote = $drift['ok']
@@ -257,16 +263,136 @@ function update_action_flush_cache(): void
     go('index.php?p=update');
 }
 
+/* ---------------- 线上自检：像陌生访客一样重新拉一遍首页 ---------------- */
+
+/** 当前站点的根地址（从后台请求反推，支持子目录部署） */
+function update_site_base(): string
+{
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $dir  = str_replace('\\', '/', dirname(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/admin/index.php'))));
+    $dir  = rtrim($dir, '/');
+    return ($https ? 'https' : 'http') . '://' . $host . $dir . '/';
+}
+
+/** 把 HTML 里的相对地址补成完整 URL */
+function update_abs_url(string $base, string $rel): string
+{
+    if (preg_match('#^https?://#i', $rel)) {
+        return $rel;
+    }
+    $p = parse_url($base);
+    $origin = ($p['scheme'] ?? 'http') . '://' . ($p['host'] ?? '');
+    if (isset($p['port'])) {
+        $origin .= ':' . $p['port'];
+    }
+    if (str_starts_with($rel, '//')) {
+        return ($p['scheme'] ?? 'http') . ':' . $rel;
+    }
+    if (str_starts_with($rel, '/')) {
+        return $origin . $rel;
+    }
+    return rtrim($base, '/') . '/' . ltrim($rel, '/');
+}
+
+function update_diag_fetch(string $url): array
+{
+    return http_get($url, ['Cache-Control: no-cache', 'Pragma: no-cache'], 4 * 1024 * 1024, 15);
+}
+
+/** 真正以访客身份拉首页 + site.js + api.php，判断问题出在文件、数据还是缓存 */
+function update_action_diag(): void
+{
+    @set_time_limit(90);
+    $state = update_state();
+    $base  = update_site_base();
+    $stamp = (string) time();
+
+    $out = ['at' => date('Y-m-d H:i:s'), 'base' => $base, 'error' => '',
+            'source' => $state['localZip'] !== '' ? '本地包 ' . $state['localZip'] : 'GitHub',
+            'home' => [], 'js' => [], 'api' => []];
+
+    $home = update_diag_fetch($base . '?zhsdiag=' . $stamp);
+    $out['home'] = [
+        'ok'     => $home['ok'],
+        'status' => $home['status'],
+        'bytes'  => $home['bytes'],
+        'error'  => $home['error'],
+    ];
+
+    if ($home['ok']) {
+        $html = $home['body'];
+        $scriptRel = '';
+        if (preg_match('#<script[^>]+src="([^"]*site\.js[^"]*)"#i', $html, $m)) {
+            $scriptRel = html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+        $out['home']['script'] = $scriptRel;
+        $out['home']['versioned'] = str_contains($scriptRel, '?v=');
+
+        if ($scriptRel !== '') {
+            $jsUrl = update_abs_url($base, $scriptRel);
+            $sep = str_contains($jsUrl, '?') ? '&' : '?';
+            $js = update_diag_fetch($jsUrl . $sep . 'zhsdiag=' . $stamp);
+            $local = APP_ROOT . '/js/site.js';
+            $localSha = is_file($local) ? substr((string) sha1_file($local), 0, 12) : '';
+            $jsSha = $js['ok'] ? substr(sha1($js['body']), 0, 12) : '';
+            $out['js'] = [
+                'url'     => $jsUrl,
+                'ok'      => $js['ok'],
+                'status'  => $js['status'],
+                'bytes'   => $js['bytes'],
+                'error'   => $js['error'],
+                'hasDock' => $js['ok'] && str_contains($js['body'], 'socialDock'),
+                'sha1'    => $jsSha,
+                'local'   => $localSha,
+                'same'    => $jsSha !== '' && $jsSha === $localSha,
+            ];
+        }
+    }
+
+    $api = update_diag_fetch($base . 'api.php?zhsdiag=' . $stamp);
+    $data = $api['ok'] ? json_decode($api['body'], true) : null;
+    $contacts = is_array($data) && is_array($data['contacts'] ?? null) ? $data['contacts'] : [];
+    $icons = array_values(array_filter($contacts, static fn($c): bool => is_array($c) && (string) ($c['icon'] ?? '') !== ''));
+    $out['api'] = [
+        'ok'       => $api['ok'],
+        'status'   => $api['status'],
+        'error'    => $api['error'],
+        'contacts' => count($contacts),
+        'icons'    => count($icons),
+        'quick'    => is_array($data['quick'] ?? null) ? count($data['quick']) : 0,
+        'names'    => array_slice(array_values(array_map(
+            static fn($c): string => (string) ($c['title'] ?? ''),
+            $contacts
+        )), 0, 12),
+    ];
+    if (!$api['ok']) {
+        $out['api']['raw'] = substr($api['body'], 0, 200);
+    }
+
+    $state['lastDiag'] = $out;
+    update_state_save($state);
+    flash('线上自检完成：' . ($out['js']['ok'] ?? false
+        ? ((($out['js']['hasDock'] ?? false) ? 'site.js 已包含社交图标代码' : 'site.js 仍是旧版'))
+        : 'site.js 拉不到')
+        . '；api contacts ' . count($contacts) . ' 条');
+    go('index.php?p=update');
+}
+
 function handle_update_action(): void
 {
     $act = post_str('act', 20);
-    if (!in_array($act, ['check', 'apply', 'rollback', 'switch', 'use-github', 'flush-cache'], true)) {
+    if (!in_array($act, ['check', 'apply', 'rollback', 'switch', 'use-github', 'flush-cache', 'diag'], true)) {
         err('未知操作');
     }
 
     // 只改本地状态，不需要更新锁
     if ($act === 'use-github') {
         update_action_use_github();
+    }
+    if ($act === 'diag') {
+        update_action_diag();
     }
 
     // 同一时间只允许一个人跑：下载要几十秒，重复点会互相踩
@@ -330,6 +456,33 @@ function render_update(): void
     }
     $socialCode = is_file(APP_ROOT . '/js/site.js')
         && str_contains((string) @file_get_contents(APP_ROOT . '/js/site.js'), 'socialDock');
+    $diag = is_array($state['lastDiag'] ?? null) ? $state['lastDiag'] : null;
+
+    $diagTone = '';
+    $diagVerdict = '';
+    if ($diag !== null) {
+        if (empty($diag['home']['ok'])) {
+            $diagTone = 'warn';
+            $diagVerdict = '首页打不开：' . (string) ($diag['home']['error'] ?? '');
+        } elseif (empty($diag['home']['script'])) {
+            $diagTone = 'warn';
+            $diagVerdict = '首页 HTML 里没有找到 site.js 引用 —— index.html 可能还是旧版。';
+        } elseif (empty($diag['js']['ok'])) {
+            $diagTone = 'warn';
+            $diagVerdict = '首页引用了 site.js，但拉不到：' . (string) ($diag['js']['error'] ?? '');
+        } elseif (empty($diag['js']['hasDock'])) {
+            $diagTone = 'warn';
+            $diagVerdict = str_starts_with((string) ($diag['source'] ?? ''), '本地包')
+                ? '更新源是「' . (string) $diag['source'] . '」，而 site.js 还是旧版 —— 多半装的是旧包。点上面的「改回从 GitHub 更新」再检查。'
+                : '服务器返回的 site.js 里没有 socialDock —— 文件还是旧版，或被 CDN/浏览器缓存了。';
+        } elseif ((int) ($diag['api']['icons'] ?? 0) === 0) {
+            $diagTone = 'warn';
+            $diagVerdict = '代码已经是新版，但 api.php 里没有带图标的社交项：去「社交图标」检查 social 分组和「前台显示」。';
+        } else {
+            $diagTone = 'ok';
+            $diagVerdict = '代码和数据都正常：首页应该能显示图标。如果浏览器里还没有，就是浏览器/CDN 缓存。';
+        }
+    }
 
     ob_start();
     ?>
@@ -461,6 +614,109 @@ function render_update(): void
   <p class="hint" style="margin-top:8px">
     带 <code>?t=时间戳</code> 的链接会绕过浏览器缓存。它显示的是新内容、但普通页面还是旧的，就是浏览器/CDN 缓存。
   </p>
+</div>
+
+<div class="card">
+  <h2>线上自检</h2>
+  <p class="hint">
+    以陌生访客的身份重新拉一遍首页、<code>js/site.js</code> 和 <code>api.php</code>（请求都带 no-cache），
+    用来判断问题到底在「服务器文件旧」「数据为空」还是「浏览器 / CDN 缓存」。
+  </p>
+  <form method="post"><?= csrf_field() ?>
+    <input type="hidden" name="act" value="diag">
+    <button type="submit" class="btn-primary">检查线上首页</button>
+  </form>
+
+  <?php if ($diag !== null): ?>
+    <table class="up-kv" style="margin-top:12px">
+      <tr>
+        <th>站点地址</th>
+        <td><code><?= h((string) ($diag['base'] ?? '')) ?></code>
+          <span class="up-dim"><?= h((string) ($diag['at'] ?? '')) ?></span></td>
+      </tr>
+      <tr>
+        <th>更新源</th>
+        <td><?= h((string) ($diag['source'] ?? '')) ?></td>
+      </tr>
+      <tr>
+        <th>首页</th>
+        <td>
+          <?php if (!empty($diag['home']['ok'])): ?>
+            <span class="up-verdict ok">HTTP <?= (int) ($diag['home']['status'] ?? 0) ?></span>
+            <span class="up-dim"><?= (int) ($diag['home']['bytes'] ?? 0) ?> 字节</span>
+          <?php else: ?>
+            <span class="up-warn">HTTP <?= (int) ($diag['home']['status'] ?? 0) ?> · <?= h((string) ($diag['home']['error'] ?? '')) ?></span>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <tr>
+        <th>首页引用的 site.js</th>
+        <td>
+          <?php if (!empty($diag['home']['script'])): ?>
+            <code><?= h((string) $diag['home']['script']) ?></code>
+            <?php if (!empty($diag['home']['versioned'])): ?>
+              <span class="up-verdict ok">带版本号</span>
+            <?php else: ?>
+              <span class="up-warn">没有 ?v= 版本号（容易被缓存）</span>
+            <?php endif; ?>
+          <?php else: ?>
+            <span class="up-warn">没有找到</span>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <tr>
+        <th>实际拉到</th>
+        <td>
+          <?php if (!empty($diag['js']['ok'])): ?>
+            <span class="up-verdict <?= !empty($diag['js']['hasDock']) ? 'ok' : 'new' ?>">
+              <?= !empty($diag['js']['hasDock']) ? '包含 socialDock' : '没有 socialDock（旧版）' ?>
+            </span>
+            <span class="up-dim">
+              <?= (int) ($diag['js']['bytes'] ?? 0) ?> 字节 ·
+              sha1 <code><?= h((string) ($diag['js']['sha1'] ?? '')) ?></code>
+              <?php if (!empty($diag['js']['same'])): ?>
+                · 与本机文件一致
+              <?php elseif (!empty($diag['js']['local'])): ?>
+                · 本机是 <code><?= h((string) $diag['js']['local']) ?></code>
+              <?php endif; ?>
+            </span>
+            <a href="<?= h((string) ($diag['js']['url'] ?? '')) ?>" target="_blank" rel="noopener">打开拉到的文件</a>
+          <?php else: ?>
+            <span class="up-warn">拉不到：<?= h((string) ($diag['js']['error'] ?? '未知错误')) ?></span>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <tr>
+        <th>api.php</th>
+        <td>
+          <?php if (!empty($diag['api']['ok'])): ?>
+            <span class="up-verdict <?= (int) ($diag['api']['icons'] ?? 0) > 0 ? 'ok' : 'new' ?>">
+              contacts <?= (int) ($diag['api']['contacts'] ?? 0) ?> 条，
+              带图标 <?= (int) ($diag['api']['icons'] ?? 0) ?> 条
+            </span>
+            <span class="up-dim">quick <?= (int) ($diag['api']['quick'] ?? 0) ?> 条</span>
+            <?php if (!empty($diag['api']['names'])): ?>
+              <div class="up-dim" style="margin:6px 0 0">
+                <?= h(implode('、', array_map('strval', (array) $diag['api']['names']))) ?>
+              </div>
+            <?php endif; ?>
+            <a href="<?= h(rtrim((string) ($diag['base'] ?? ''), '/') . '/api.php') ?>" target="_blank" rel="noopener">直接打开 api.php</a>
+          <?php else: ?>
+            <span class="up-warn">拉不到：<?= h((string) ($diag['api']['error'] ?? '未知错误')) ?></span>
+            <?php if (!empty($diag['api']['raw'])): ?>
+              <div class="up-dim"><?= h((string) $diag['api']['raw']) ?></div>
+            <?php endif; ?>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <tr>
+        <th>结论</th>
+        <td>
+          <span class="up-verdict <?= h($diagTone) ?>"><?= h($diagVerdict) ?></span>
+        </td>
+      </tr>
+    </table>
+  <?php endif; ?>
 </div>
 
 <?php if ($plan !== null): ?>

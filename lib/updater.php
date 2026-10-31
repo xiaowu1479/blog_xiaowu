@@ -137,6 +137,88 @@ function update_manifest_save(array $manifest): void
 }
 
 /**
+ * 给 HTML 里的本地 css/js 引用加/更新 ?v=内容哈希。
+ * 目的：更新后 URL 就变了，浏览器和 CDN 不可能再拿旧文件，不用用户按 Ctrl+F5。
+ */
+function update_html_version_assets(string $html): string
+{
+    $out = preg_replace_callback(
+        '~\b(href|src)="((?:css|js)/[^"?#]+\.(?:css|js))(?:\?v=[^"#]*)?"~i',
+        static function (array $m): string {
+            $rel = $m[2];
+            $abs = APP_ROOT . '/' . $rel;
+            if (!is_file($abs)) {
+                return $m[1] . '="' . $rel . '"';
+            }
+            return $m[1] . '="' . $rel . '?v=' . substr((string) @sha1_file($abs), 0, 8) . '"';
+        },
+        $html
+    );
+    return is_string($out) ? $out : $html;
+}
+
+/** 把站点根目录所有 HTML 的资源引用都刷一遍版本号 */
+function update_bump_assets(): int
+{
+    $n = 0;
+    foreach (glob(APP_ROOT . '/*.html') ?: [] as $file) {
+        $old = @file_get_contents($file);
+        if ($old === false) {
+            continue;
+        }
+        $new = update_html_version_assets($old);
+        if ($new !== $old && @file_put_contents($file, $new) !== false) {
+            $n++;
+        }
+    }
+    clearstatcache();
+    return $n;
+}
+
+/** 刷完 HTML 版本号后，按磁盘上的真实文件重算台账（只更新台账里已有的文件） */
+function update_manifest_refresh_local(): int
+{
+    $old = update_manifest();
+    if ($old === []) {
+        return 0;
+    }
+    $new = [];
+    foreach ($old as $rel => $_) {
+        $rel = ltrim(str_replace('\\', '/', (string) $rel), '/');
+        if ($rel === '' || update_is_protected($rel)) {
+            continue;
+        }
+        $abs = APP_ROOT . '/' . $rel;
+        if (is_file($abs)) {
+            $new[$rel] = (string) @sha1_file($abs);
+        }
+    }
+    update_manifest_save($new);
+    return count($new);
+}
+
+/**
+ * 比对用的指纹。HTML 先去掉资源版本号再算，
+ * 否则「仓库里没版本号、服务器上有」会被误判成每次都有改动。
+ */
+function update_compare_sig(string $path, string $rel): string
+{
+    if (!str_ends_with(strtolower($rel), '.html')) {
+        return (string) @sha1_file($path);
+    }
+    $raw = @file_get_contents($path);
+    if ($raw === false) {
+        return '';
+    }
+    $norm = preg_replace(
+        '~\b(href|src)="((?:css|js)/[^"?#]+\.(?:css|js))(?:\?v=[^"#]*)?"~i',
+        '$1="$2"',
+        $raw
+    );
+    return sha1(is_string($norm) ? $norm : $raw);
+}
+
+/**
  * 用「安装台账」校验本地文件是否被改过 / 删过。
  * 版本号相同不代表文件没被动过：手动恢复、从备份拷文件、部分写入失败都会造成漂移。
  *
@@ -549,6 +631,7 @@ function update_plan(string $dir): array
             continue;
         }
         $sha1 = (string) @sha1_file($info->getPathname());
+        $cmp  = update_compare_sig($info->getPathname(), $rel);
         $size = (int) $info->getSize();
         $upstream[$rel] = ['sha1' => $sha1, 'size' => $size];
         $out['total']++;
@@ -560,7 +643,8 @@ function update_plan(string $dir): array
             continue;
         }
         $localSha = (string) @sha1_file($localPath);
-        if ($localSha === $sha1) {
+        // 只差 ?v=版本号不算改动；真内容变了才进清单
+        if ($localSha === $sha1 || update_compare_sig($localPath, $rel) === $cmp) {
             $out['same']++;
             continue;
         }
@@ -866,6 +950,9 @@ function update_rollback(string $dirName): array
 /** 按解压目录重算「本次装完的文件清单」，下次用它判断哪些是本地改过的 */
 function update_install_manifest(string $dir): int
 {
+    // 先给 HTML 里的 css/js 刷新版本号，再记台账：台账要和磁盘上的真实文件一致
+    update_bump_assets();
+
     $manifest = [];
     $it = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
@@ -880,7 +967,8 @@ function update_install_manifest(string $dir): int
         if ($rel === '' || update_is_protected($rel)) {
             continue;
         }
-        $manifest[$rel] = (string) @sha1_file($info->getPathname());
+        $installed = APP_ROOT . '/' . $rel;
+        $manifest[$rel] = (string) @sha1_file(is_file($installed) ? $installed : $info->getPathname());
     }
     update_manifest_save($manifest);
     return count($manifest);

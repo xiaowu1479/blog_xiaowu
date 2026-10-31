@@ -20,4 +20,23 @@ if (!is_installed()) {
 header('Content-Type: text/html; charset=utf-8');
 // 和 nginx.htaccess 里那条保持一致：主页也每次回源校验，别让浏览器留着旧壳子
 header('Cache-Control: no-cache, must-revalidate');
-readfile(__DIR__ . '/index.html');
+
+// 给主页引用的 css/js 自动加 ?v=文件时间：更新后浏览器/CDN 不可能再拿旧文件。
+// 只改本地相对路径，外链（字体、CDN）原样保留。
+$html = (string) @file_get_contents(__DIR__ . '/index.html');
+$versioned = preg_replace_callback(
+    '~\b(href|src)="((?:css|js)/[^"?#]+\.(?:css|js))(?:\?v=[^"#]*)?"~i',
+    static function (array $m): string {
+        $rel = $m[2];
+        $abs = __DIR__ . '/' . $rel;
+        if (!is_file($abs)) {
+            return $m[1] . '="' . $rel . '"';
+        }
+        return $m[1] . '="' . $rel . '?v=' . (int) filemtime($abs) . '"';
+    },
+    $html
+);
+if (is_string($versioned)) {
+    $html = $versioned;
+}
+echo $html;
