@@ -364,6 +364,74 @@ const SITE = {
     });
   }
 
+  /** 品牌色 → 两套主题下都看得清的前景/背景（太亮压暗、太暗提亮） */
+  function brandVars(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex == null ? '' : hex).trim());
+    if (!m) return '';
+    const n = parseInt(m[1], 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    const toward = (t) => {
+      const f = (v) => Math.round(Math.min(255, Math.max(0, t <= 1 ? v * t : v + (255 - v) * (t - 1))));
+      return [f(r), f(g), f(b)];
+    };
+    const inkLight = lum > 0.62 ? toward(0.6) : (r + g + b < 60 ? toward(1.9) : [r, g, b]);
+    const inkDark = lum < 0.42 ? toward(1.75) : [r, g, b];
+    const rgba = (c, a) => 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')';
+    return '--brand-ink:' + rgba(inkLight, 1)
+      + ';--brand-ink-d:' + rgba(inkDark, 1)
+      + ';--brand-soft:' + rgba([r, g, b], 0.14)
+      + ';--brand-soft-d:' + rgba([r, g, b], 0.2);
+  }
+
+  /* ---- 右下角社交图标（浮动，数据来自后台「社交图标」） ---- */
+  function renderSocial() {
+    const list = Array.isArray(SITE.contacts) ? SITE.contacts : [];
+    const items = list.filter((c) => c && c.icon);
+    let dock = document.getElementById('socialDock');
+
+    if (!items.length) {
+      if (dock) dock.remove();
+      return;
+    }
+    if (!dock) {
+      dock = make('div', { class: 'social-dock', id: 'socialDock', role: 'navigation', 'aria-label': '联系方式' });
+      document.body.appendChild(dock);
+    }
+    dock.innerHTML = '';
+
+    items.forEach((c) => {
+      const href = String(c.href == null ? '' : c.href).trim();
+      const title = String(c.title || '');
+      const icon = make('i', { class: c.icon });
+      const style = brandVars(c.color);
+
+      if (href === '') {
+        // 后台还没填链接：半透明占位，鼠标移上去能看到提示
+        dock.appendChild(make('span', {
+          class: 'social-dock__item is-off',
+          title: (title ? title + '：' : '') + '链接待填写',
+          'aria-label': (title ? title + '：' : '') + '链接待填写',
+          style: style
+        }, [icon]));
+        return;
+      }
+
+      const external = /^https?:/i.test(href);
+      dock.appendChild(make('a', {
+        class: 'social-dock__item',
+        href: href,
+        title: title,
+        'aria-label': title,
+        target: external ? '_blank' : null,
+        rel: external ? 'noopener noreferrer' : null,
+        style: style
+      }, [icon]));
+    });
+  }
+
   function renderPay() {
     const box = $('#payBody');
     if (!box) return;
@@ -813,6 +881,7 @@ const SITE = {
     renderQuick();
     renderAbout();
     renderSites();
+    renderSocial();
     renderPay();
     renderWorks(openDetail);
     renderPosts();

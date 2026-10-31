@@ -1259,3 +1259,86 @@ main.main {
   animation-duration: .18s;
   animation-timing-function: ease;
 }
+
+/* ---------- 右下角社交图标（浮动竖排，数据来自后台「社交图标」social 分组） ---------- */
+.social-dock {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.social-dock__item {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--ui-shadow);
+  text-decoration: none;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.social-dock__item i {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--brand-ink, var(--ui-text));
+}
+
+.social-dock__item:hover {
+  transform: translateY(-2px);
+  background: var(--brand-soft, var(--ui-hover));
+  box-shadow: 0 10px 22px rgba(17, 24, 39, .16);
+}
+
+body.dark-mode .social-dock__item i {
+  color: var(--brand-ink-d, var(--ui-text));
+}
+
+body.dark-mode .social-dock__item:hover {
+  background: var(--brand-soft-d, var(--ui-hover));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .45);
+}
+
+/* 后台还没填链接的：半透明占位，不可点 */
+.social-dock__item.is-off {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.social-dock__item.is-off:hover {
+  transform: none;
+  background: var(--ui-glass);
+  box-shadow: var(--ui-shadow);
+}
+
+@media (max-width: 640px) {
+  .social-dock {
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    gap: 7px;
+  }
+
+  .social-dock__item {
+    width: 34px;
+    height: 34px;
+  }
+
+  .social-dock__item i {
+    font-size: 14px;
+  }
+}
+
+@media print {
+  .social-dock {
+    display: none;
+  }
+}
