@@ -135,6 +135,39 @@ function update_manifest_save(array $manifest): void
     }
 }
 
+/**
+ * 用「安装台账」校验本地文件是否被改过 / 删过。
+ * 版本号相同不代表文件没被动过：手动恢复、从备份拷文件、部分写入失败都会造成漂移。
+ *
+ * @return array{ok: bool, total: int, changed: array<int, array{path: string, state: string}>}
+ */
+function update_local_drift(): array
+{
+    $manifest = update_manifest();
+    $out = ['ok' => false, 'total' => 0, 'changed' => []];
+    if ($manifest === []) {
+        return $out;
+    }
+
+    $out['ok'] = true;
+    $out['total'] = count($manifest);
+    foreach ($manifest as $rel => $sha1) {
+        $rel = ltrim(str_replace('\\', '/', (string) $rel), '/');
+        if ($rel === '' || update_is_protected($rel)) {
+            continue;
+        }
+        $abs = APP_ROOT . '/' . $rel;
+        if (!is_file($abs)) {
+            $out['changed'][] = ['path' => $rel, 'state' => 'missing'];
+            continue;
+        }
+        if (@sha1_file($abs) !== (string) $sha1) {
+            $out['changed'][] = ['path' => $rel, 'state' => 'modified'];
+        }
+    }
+    return $out;
+}
+
 function update_dir(string $dir): bool
 {
     if (is_dir($dir)) {
@@ -199,30 +232,45 @@ function update_remote_head(): array
 }
 
 /**
- * 取「该更新到哪一版」：优先问 GitHub；
- * 没外网但配了本地包时，就用包的哈希当版本号（离线更新也能比对）。
+ * 取「该更新到哪一版」。
+ *
+ * 配了本地包就以本地包为准：这是明确的「用这个包」指令，版本号也用包的哈希。
+ * 不能先问 GitHub 拿到远端版本号、下载时却装本地旧包——那样会出现
+ * 「后台显示已更新到最新提交，实际文件还是旧包」的假成功。
+ * 想从 GitHub 更新，先把 localZip 清空（后台更新页有按钮）。
  */
 function update_head(): array
 {
-    $head = update_remote_head();
-    if ($head['ok']) {
-        return $head;
-    }
     $state = update_state();
-    if ($state['localZip'] === '' || !is_file($state['localZip'])) {
-        return $head;
+
+    if ($state['localZip'] !== '') {
+        if (!is_file($state['localZip'])) {
+            return [
+                'ok'      => false,
+                'sha'     => '',
+                'short'   => '',
+                'message' => '',
+                'author'  => '',
+                'date'    => '',
+                'url'     => '',
+                'error'   => '本地包不存在：' . $state['localZip'] . '（可以在更新页点「改回从 GitHub 更新」）',
+            ];
+        }
+
+        $sha = 'local-' . substr((string) sha1_file($state['localZip']), 0, 8);
+        return [
+            'ok'      => true,
+            'sha'     => $sha,
+            'short'   => $sha,
+            'message' => '本地包 · ' . basename($state['localZip']),
+            'author'  => '本地',
+            'date'    => date('c', (int) filemtime($state['localZip'])),
+            'url'     => '',
+            'error'   => '',
+        ];
     }
-    $sha = 'local-' . substr((string) sha1_file($state['localZip']), 0, 8);
-    return [
-        'ok'      => true,
-        'sha'     => $sha,
-        'short'   => $sha,
-        'message' => '本地包 · ' . basename($state['localZip']),
-        'author'  => '本地',
-        'date'    => date('c', (int) filemtime($state['localZip'])),
-        'url'     => '',
-        'error'   => '',
-    ];
+
+    return update_remote_head();
 }
 
 /** 最近 N 条提交，给页面上的更新日志用 */
@@ -273,6 +321,15 @@ function update_download(string $sha, string $refPath = '', bool $forceRemote = 
     $cache    = $cacheDir . '/source-' . $cacheKey . '.zip';
     // 指定了本地包时，本地包优先于缓存（那是明确的「用这个包」指令）
     $useLocal = !$forceRemote && $state['localZip'] !== '' && is_file($state['localZip']);
+
+    // 保险：本地包只能配本地包自己的版本号。如果调用方传进来一个 GitHub 提交号，
+    // 说明「版本号」和「实际要装的包」对不上，宁可报错也不要做假更新。
+    if ($useLocal && $sha !== '' && !str_starts_with($sha, 'local-') && $refPath === '') {
+        $out['error'] = '本地包模式和 GitHub 版本号不一致（' . substr($sha, 0, 7)
+            . '）。请清空 localZip 改回从 GitHub 更新，或改用本地包自己的版本号。';
+        return $out;
+    }
+
     if (!$useLocal && $cacheKey !== '' && is_file($cache) && (int) @filesize($cache) > 200 && @copy($cache, $zip)) {
         $out['ok']     = true;
         $out['zip']    = $zip;

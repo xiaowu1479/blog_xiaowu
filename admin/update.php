@@ -30,6 +30,12 @@ function update_fmt(string $iso): string
     }
 }
 
+/** 更新/切换后统一提醒：前台缓存不在服务端 */
+function update_cache_hint(): string
+{
+    return '前台如果还是旧样式，按 Ctrl+F5（有 CDN 的刷新 CDN 缓存）';
+}
+
 /** 一句话总结一次检查的结论 */
 function update_check_summary(array $check): string
 {
@@ -37,11 +43,15 @@ function update_check_summary(array $check): string
         return '还没检查过';
     }
     $plan = $check['plan'] ?? null;
+    $note = (string) ($check['note'] ?? '');
     if (is_array($plan) && (int) $plan['changes'] > 0) {
+        if (str_contains($note, '不一致')) {
+            return '提交号未变，但有 ' . (int) $plan['changes'] . ' 个文件需要修复';
+        }
         return '有新版本：新增 ' . $plan['add'] . ' · 修改 ' . $plan['mod']
             . ' · 删除 ' . count($plan['del']) . ' 个文件';
     }
-    return (string) ($check['note'] ?? '已是最新');
+    return $note !== '' ? $note : '已是最新';
 }
 
 /* ============================ 动作 ============================ */
@@ -59,12 +69,23 @@ function update_action_check(): void
         go('index.php?p=update');
     }
 
-    $state = update_state();
-    $cur   = (string) ($state['current']['sha'] ?? '');
-    if ($cur !== '' && $cur === $head['sha']) {
-        update_remember_check($head, null, '已是最新版本');
-        flash('已是最新版本（' . $head['short'] . '）');
-        go('index.php?p=update');
+    $state   = update_state();
+    $cur     = (string) ($state['current']['sha'] ?? '');
+    $sameSha = ($cur !== '' && $cur === $head['sha']);
+    $driftNote = '';
+
+    if ($sameSha) {
+        // 版本号一样不代表文件没被动过：手动恢复、从备份拷文件、部分写入失败都可能造成漂移。
+        // 台账一致才敢直接说「已是最新」；不一致就继续下载比对，让计划里列出来。
+        $drift = update_local_drift();
+        if ($drift['ok'] && $drift['changed'] === []) {
+            update_remember_check($head, null, '已是最新版本（本地文件与台账一致）');
+            flash('已是最新版本（' . $head['short'] . '）');
+            go('index.php?p=update');
+        }
+        $driftNote = $drift['ok']
+            ? '提交号已是最新，但本地有 ' . count($drift['changed']) . ' 个文件与台账不一致（可能被手改/恢复过），重新比对'
+            : '提交号已是最新，但没有文件台账，重新比对';
     }
 
     $dl = update_download($head['sha']);
@@ -92,15 +113,20 @@ function update_action_check(): void
         // 仓库里的内容和服务器上一模一样：把当前版本记为这一版，建立文件台账
         update_adopt($head, $plan['total']);
         update_install_manifest($ex['dir']);
-        update_remember_check($head, null, '内容和仓库一致，已把当前版本记为 ' . $head['short']);
+        $note = $driftNote !== '' ? $driftNote . '；内容和仓库一致' : '内容和仓库一致，已把当前版本记为 ' . $head['short'];
+        update_remember_check($head, null, $note);
         update_cleanup_tmp();
-        flash('内容和仓库一致（' . $plan['total'] . ' 个文件），已把当前版本记为 ' . $head['short']);
+        flash(($driftNote !== '' ? $driftNote . '；' : '') . '内容和仓库一致（' . $plan['total'] . ' 个文件）');
         go('index.php?p=update');
     }
 
-    update_remember_check($head, $plan);
+    update_remember_check($head, $plan, $driftNote);
     update_cleanup_tmp();
-    flash('发现新版本 ' . $head['short'] . '：新增 ' . $plan['add']
+    $what = $sameSha
+        ? ($driftNote !== '' ? $driftNote . '；' : '')
+            . '发现 ' . (int) $plan['changes'] . ' 个文件需要修复/更新'
+        : '发现新版本 ' . $head['short'];
+    flash($what . '：新增 ' . $plan['add']
         . ' · 修改 ' . $plan['mod'] . ' · 删除 ' . count($plan['del']));
     go('index.php?p=update');
 }
@@ -156,6 +182,7 @@ function update_action_apply(): void
         if ($run['backup'] !== '') {
             $msg .= ' · 备份 ' . str_replace('\\', '/', substr($run['backup'], strlen(APP_ROOT) + 1)) . '/';
         }
+        $msg .= ' · ' . update_cache_hint();
         flash($msg);
     } else {
         update_remember_run($head, $run, 0);
@@ -206,11 +233,40 @@ function update_action_switch(): void
     go('index.php?p=update');
 }
 
+/** 把更新源从本地包切回 GitHub（清空 localZip） */
+function update_action_use_github(): void
+{
+    $state = update_state();
+    $old   = (string) $state['localZip'];
+    $state['localZip'] = '';
+    // 上一轮的「最新」可能是按本地包算的，切回 GitHub 后重新查
+    $state['lastCheck'] = null;
+    update_state_save($state);
+    flash('已改回从 GitHub 更新' . ($old !== '' ? '（原本地包：' . $old . '）' : '') . '，请点「检查更新」重新比对');
+    go('index.php?p=update');
+}
+
+/** 清理服务端缓存；浏览器缓存只能靠 Ctrl+F5 / CDN 刷新 */
+function update_action_flush_cache(): void
+{
+    clearstatcache(true);
+    $op = function_exists('opcache_reset') ? @opcache_reset() : false;
+    update_cleanup_tmp();
+    flash('服务端缓存已清理' . ($op ? '（OPcache 已重置）' : '（PHP 没开 OPcache）')
+        . '；浏览器如果还是旧页面，请按 Ctrl+F5，有 CDN 的刷新 CDN 缓存');
+    go('index.php?p=update');
+}
+
 function handle_update_action(): void
 {
     $act = post_str('act', 20);
-    if (!in_array($act, ['check', 'apply', 'rollback', 'switch'], true)) {
+    if (!in_array($act, ['check', 'apply', 'rollback', 'switch', 'use-github', 'flush-cache'], true)) {
         err('未知操作');
+    }
+
+    // 只改本地状态，不需要更新锁
+    if ($act === 'use-github') {
+        update_action_use_github();
     }
 
     // 同一时间只允许一个人跑：下载要几十秒，重复点会互相踩
@@ -223,6 +279,9 @@ function handle_update_action(): void
         update_lock_release($lock);
     });
 
+    if ($act === 'flush-cache') {
+        update_action_flush_cache();
+    }
     if ($act === 'check') {
         update_action_check();
     }
@@ -249,6 +308,28 @@ function render_update(): void
     $repoUrl = 'https://github.com/' . $state['repo'];
     $srcName = $state['localZip'] !== '' ? '本地包（' . $state['localZip'] . '）' : 'GitHub';
     $tokenOn = $state['token'] !== '';
+    $localOn = $state['localZip'] !== '';
+
+    // 前台关键资源自检：服务器上的文件到底是不是新的？
+    $manifestNow = update_manifest();
+    $watchRows = [];
+    foreach (['js/site.js', 'css/site.css', 'index.html'] as $rel) {
+        $abs = APP_ROOT . '/' . $rel;
+        $exists = is_file($abs);
+        $sha = $exists ? (string) @sha1_file($abs) : '';
+        $recorded = (string) ($manifestNow[$rel] ?? '');
+        $watchRows[] = [
+            'path' => $rel,
+            'exists' => $exists,
+            'sha' => $sha,
+            'mtime' => $exists ? date('Y-m-d H:i:s', (int) filemtime($abs)) : '',
+            'size' => $exists ? (int) filesize($abs) : 0,
+            'recorded' => $recorded,
+            'same' => $recorded !== '' && $sha !== '' && $sha === $recorded,
+        ];
+    }
+    $socialCode = is_file(APP_ROOT . '/js/site.js')
+        && str_contains((string) @file_get_contents(APP_ROOT . '/js/site.js'), 'socialDock');
 
     ob_start();
     ?>
@@ -314,6 +395,72 @@ function render_update(): void
     </form>
     <span class="hint">「立即更新」会重新取一次远端最新版，可能比上面的预览新一两个提交。</span>
   </div>
+</div>
+
+<?php if ($localOn): ?>
+<div class="card">
+  <h2>当前是本地包模式</h2>
+  <div class="up-alert">
+    更新源是 <code><?= h($state['localZip']) ?></code>。这个模式只安装这个包，不会去 GitHub 拉最新代码，
+    版本号也按包的哈希计算。如果你以为在更新 GitHub 最新版，请先切回去。
+  </div>
+  <form method="post"><?= csrf_field() ?>
+    <input type="hidden" name="act" value="use-github">
+    <button type="submit" class="btn-primary">改回从 GitHub 更新</button>
+  </form>
+</div>
+<?php endif; ?>
+
+<div class="card">
+  <h2>缓存与前台资源</h2>
+  <p class="hint">
+    更新程序已经处理了服务端的 PHP OPcache / stat 缓存；但浏览器和 CDN 的缓存清不到。
+    更新完前台还是旧样式时：先按 <b>Ctrl+F5</b>，有 CDN 的再去 CDN 后台刷新。
+  </p>
+  <div class="actions">
+    <form method="post"><?= csrf_field() ?>
+      <input type="hidden" name="act" value="flush-cache">
+      <button type="submit" class="btn-ghost">清理服务端缓存</button>
+    </form>
+    <span class="hint">清 OPcache、stat 缓存和临时解压目录；源码包下载缓存保留。</span>
+  </div>
+
+  <table class="up-kv" style="margin-top:12px">
+    <tr>
+      <th>社交图标代码</th>
+      <td>
+        <?php if ($socialCode): ?>
+          <span class="up-verdict ok">已包含 renderSocial / socialDock</span>
+          <span class="up-dim">如果这里正常但首页没有图标，先查 /api.php 的 contacts，再查浏览器缓存。</span>
+        <?php else: ?>
+          <span class="up-warn">js/site.js 里没有 socialDock —— 这个文件还是旧版</span>
+        <?php endif; ?>
+      </td>
+    </tr>
+    <?php foreach ($watchRows as $w): ?>
+      <tr>
+        <th style="width:110px"><code><?= h($w['path']) ?></code></th>
+        <td>
+          <?php if (!$w['exists']): ?>
+            <span class="up-warn">文件不存在</span>
+          <?php else: ?>
+            <span class="up-dim"><?= h($w['mtime']) ?> · <?= (int) $w['size'] ?> 字节 · sha1 <code><?= h(substr($w['sha'], 0, 12)) ?></code></span>
+            <?php if ($w['same']): ?>
+              <span class="up-verdict ok">与台账一致</span>
+            <?php elseif ($w['recorded'] !== ''): ?>
+              <span class="up-warn">与台账不一致（被手改/恢复过，或台账还是旧版本）</span>
+            <?php else: ?>
+              <span class="up-dim">台账里没有这个文件</span>
+            <?php endif; ?>
+            <a href="../<?= h($w['path']) ?>?t=<?= time() ?>" target="_blank" rel="noopener">打开当前文件</a>
+          <?php endif; ?>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+  </table>
+  <p class="hint" style="margin-top:8px">
+    带 <code>?t=时间戳</code> 的链接会绕过浏览器缓存。它显示的是新内容、但普通页面还是旧的，就是浏览器/CDN 缓存。
+  </p>
 </div>
 
 <?php if ($plan !== null): ?>

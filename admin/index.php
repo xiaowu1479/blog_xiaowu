@@ -113,9 +113,9 @@ function entity_defs(): array
         'contacts' => [
             'title' => '社交图标',
             'icon' => 'fa-solid fa-share-nodes',
-            'hint' => '只有 quick 分组会显示在名片卡的两个方形入口里；social 分组的数据仍保留着，但前台已不再渲染（侧栏那排图标已移除）。',
+            'hint' => 'quick 分组显示在名片卡右上角的两个方形入口；social 分组显示在首页右下角的浮动图标栏（勾了「前台显示」才出现，链接留空会显示成半透明占位）。',
             'fields' => [
-                ['grp', '分组', 'select', true, '', ['social' => 'social（左侧栏）', 'quick' => 'quick（快捷入口）']],
+                ['grp', '分组', 'select', true, '', ['social' => 'social（右下角浮动）', 'quick' => 'quick（快捷入口）']],
                 ['icon', '图标', 'text', false, 'FontAwesome 类名，如 fa-brands fa-qq（social 用）'],
                 ['color', '图标颜色', 'text', false, '如 #a0d5ff（social 用）'],
                 ['img', '图片地址', 'upload', false, 'quick 分组用图片，如 img/github-alt.svg'],
