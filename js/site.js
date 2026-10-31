@@ -328,6 +328,8 @@ const SITE = {
     }
 
     if (href !== '') {
+      // 粘网址常带尾巴：分号、逗号、句号（中文的也算）先剪掉
+      href = href.replace(/[;；,，。、]+$/, '').trim();
       if (!/^https?:\/\//i.test(href)) {
         href = 'https://' + href.replace(/^\/+/, '');
       }
