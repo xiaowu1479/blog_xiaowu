@@ -188,8 +188,8 @@ function db_seed(PDO $pdo): void
         'pay_wechat' => 'img/zanshang.png',
         'pay_alipay' => 'img/zfb.png',
 
-        // 旗下站点：每行一个
-        'sites' => "本站 · 小悟大人的个人主页\n在这里列出你的其他站点，一行一个",
+        // 旗下站点：每行一条；写「名称|网址」就能点，只写文字就是纯文本
+        'sites' => "本站 · 小悟大人的个人主页\n示例站点 | https://example.com",
 
         // 页脚
         'icp_text' => '苏ICP备',

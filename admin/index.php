@@ -503,7 +503,7 @@ function render_settings(): void
           <?php
           echo render_field(['skills', '技能标签', 'textarea', false, '每行一条，格式「标签|颜色」，如 CSS|#f70808', 5], $s);
           echo render_field(['about_lines', '关于弹窗条目', 'textarea', false, '每行一条，格式「图标|颜色|文字」', 4], $s);
-          echo render_field(['sites', '旗下站点', 'textarea', false, '每行一个', 4], $s);
+          echo render_field(['sites', '旗下站点', 'textarea', false, '每行一条，格式「名称|网址」，如 我的博客|https://example.com；不写网址就是纯文字', 4], $s);
           ?>
         </section>
 

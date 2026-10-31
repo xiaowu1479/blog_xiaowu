@@ -151,9 +151,10 @@ const SITE = {
   ],
 
   /* ---- 旗下站点（弹窗） ---- */
+  /* 每行一个；想要能点，就写「名称 | 网址」 */
   sites: [
     '本站 · 小悟大人的个人主页',
-    '在这里列出你的其他站点，一行一个'
+    '示例站点 | https://example.com'
   ],
 
   /* ---- 页脚 ---- */
@@ -306,14 +307,57 @@ const SITE = {
     });
   }
 
+  /**
+   * 解析一行「旗下站点」：
+   *   "名称 | https://example.com"  → { label:'名称', href:'https://example.com' }
+   *   "https://example.com"         → { label:'https://example.com', href:'https://example.com' }
+   *   "纯文字一行"                   → { label:'纯文字一行', href:'' }（渲染成普通文字，不可点）
+   */
+  function parseSiteLine(raw) {
+    const text = String(raw == null ? '' : raw).trim();
+    if (text === '') return null;
+
+    let label = text;
+    let href = '';
+    const parts = text.split(/\s*[|｜]\s*/);
+    if (parts.length > 1) {
+      label = parts[0].trim();
+      href = parts.slice(1).join('|').trim();
+    } else if (!/\s/.test(text) && (/^(?:https?:\/\/|www\.)/i.test(text) || /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/\S*)?$/i.test(text))) {
+      href = text;
+    }
+
+    if (href !== '') {
+      if (!/^https?:\/\//i.test(href)) {
+        href = 'https://' + href.replace(/^\/+/, '');
+      }
+      // 只放行 http(s)；javascript: 之类一律降级成纯文字
+      if (!/^https?:\/\/[^\s/?#]+\.[^\s/?#]+/i.test(href)) {
+        href = '';
+      }
+    }
+    return { label: label === '' ? href : label, href };
+  }
+
   function renderSites() {
     const box = $('#siteBody');
     if (!box) return;
     box.innerHTML = '';
-    SITE.sites.forEach((s) => {
+    SITE.sites.forEach((raw) => {
+      const item = parseSiteLine(raw);
+      if (!item) return;
+      const labelNode = document.createTextNode('\u00a0 ' + item.label);
       box.appendChild(make('div', { class: 'post-date', style: 'font-size:12.5px;color:var(--ui-text);padding:3px 0' }, [
         make('i', { class: 'fa-solid fa-link', style: 'color:#74C0FC;font-size:10px' }),
-        document.createTextNode('\u00a0 ' + s)
+        item.href !== ''
+          ? make('a', {
+            href: item.href,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            title: item.href,
+            style: 'text-decoration:none;color:inherit'
+          }, [labelNode])
+          : labelNode
       ]));
     });
   }
