@@ -46,6 +46,49 @@
     }
   }
 
+  /** 同一页面内的锚点跳转（#links、#top 这类）：浏览器会自己滚过去，
+      这里只补一次精确滚动，并让调用方跳过整套换页逻辑 */
+  function hashOnlyNav() {
+    var h = location.hash;
+    if (!h || h.length < 2) return false;
+    if (MENU.indexOf(currentFile()) === -1) return false;
+
+    var id = h.slice(1);
+    var el = null;
+    try {
+      el = document.getElementById(decodeURIComponent(id));
+    } catch (e) {
+      el = document.getElementById(id);
+    }
+    if (!el) return false;
+
+    var top = id === 'top' ? 0 : Math.max(0, window.scrollY + el.getBoundingClientRect().top - 12);
+    window.scrollTo({ top: top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    return true;
+  }
+
+  /** 点击页内锚点：接管滚动，并更新地址栏（pushState 不触发 popstate，免得再绕一圈） */
+  function anchorJump(link, ev) {
+    var id = (link.getAttribute('href') || '').slice(1);
+    if (!id) return;
+
+    var el = null;
+    try {
+      el = document.getElementById(decodeURIComponent(id));
+    } catch (e) {
+      el = document.getElementById(id);
+    }
+    if (!el) return;   // 锚点不存在：交给浏览器默认行为
+
+    ev.preventDefault();
+    try {
+      history.pushState(null, '', '#' + id);
+    } catch (e) { /* 忽略：file:// 之类环境下可能失败 */ }
+
+    var top = id === 'top' ? 0 : Math.max(0, window.scrollY + el.getBoundingClientRect().top - 12);
+    window.scrollTo({ top: top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  }
+
   function fileOf(path) {
     var f = String(path || '').split('?')[0].split('#')[0];
     f = f.substring(f.lastIndexOf('/') + 1);
@@ -263,7 +306,13 @@
     // 侧栏菜单 + 文章页的「全部文章 / 返回列表」都走原地换页，
     // 免得从文章返回博客时整页重载、左侧菜单跟着闪一下
     var a = ev.target.closest ? ev.target.closest('.sb-nav a, a.blog-item, a.article-back, a.topbar-btn, #articleNav a') : null;
-    if (!a) return;
+    if (!a) {
+      // 页内锚点（名片底部的「友链」、「回到顶部」）：自己接管滚动，
+      // 位置才精确，也不会跟浏览器的锚点定位互相打架
+      var hs = ev.target.closest ? ev.target.closest('a[href^="#"]') : null;
+      if (hs) anchorJump(hs, ev);
+      return;
+    }
     if (a.target && a.target !== '_self') return;
     if (a.hasAttribute('download')) return;
 
@@ -286,6 +335,10 @@
 
   /* ---------------- 前进 / 后退 ---------------- */
   window.addEventListener('popstate', function (ev) {
+    // 页内锚点（名片底部的「友链」按钮、回到顶部）也会触发 popstate，
+    // 但它不是换页：再跑一遍换页逻辑会用 jumpTo(0) 把视图拽回顶部，锚点就白跳了
+    if (hashOnlyNav()) return;
+
     var file = currentFile();
     if (MENU.indexOf(file) === -1) {
       // 例如首屏直接打开 post.html，点菜单局部换页后再后退：
