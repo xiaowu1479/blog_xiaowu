@@ -492,6 +492,7 @@ const SITE = {
         ])
       ], {
         clickable: true,
+        newTab: true,          // 外链作品在新标签页打开，别把访客带离本站
         offTitle: '没有链接' + (openDetail ? '，点击查看详情' : ''),
         onclick: (e) => {
           e.preventDefault();
