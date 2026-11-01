@@ -399,7 +399,8 @@ function render_entity(string $table, array $def): void
     $editId = get_int('edit');
     $row = $editId ? (row_one($table, $editId) ?? []) : [];
     $items = rows($table);
-    // 有 Markdown 编辑器的表单要占满整行，否则左右分栏下编辑区只有 190px 宽
+    // 有 Markdown 编辑器的表单要占满整行，否则左右分栏下编辑区只有 190px 宽；
+    // 表单占满整行后，下面的列表也得跟着占满，不然会被挤进左侧 420px 那栏
     $wide = in_array('markdown', array_column($def['fields'], 2), true);
 
     ob_start();
@@ -419,10 +420,10 @@ function render_entity(string $table, array $def): void
         </form>
       </section>
 
-      <section class="card">
+      <section class="card<?= $wide ? ' card-wide' : '' ?>">
         <h2>已有 <?= count($items) ?> 条</h2>
         <?php if (!$items): ?>
-          <p class="empty">还没有内容，左边添加一条试试。</p>
+          <p class="empty">还没有内容，<?= $wide ? '上面' : '左边' ?>添加一条试试。</p>
         <?php else: ?>
         <div class="list-wrap">
         <table class="list">

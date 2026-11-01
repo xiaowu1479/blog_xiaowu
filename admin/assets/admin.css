@@ -365,7 +365,8 @@ table.kv td { padding: 5px 0; }
   .md-preview { border-left: 0; border-top: 1px solid var(--a-line); max-height: 340px; }
 }
 
-/* 带 Markdown 编辑器的表单占满整行（左右分栏时编辑区会窄到没法用） */
+/* 带 Markdown 编辑器的表单占满整行（左右分栏时编辑区会窄到没法用），
+   它下面的「已有 N 条」列表也一起占满，否则会被挤进左边 420px 那栏 */
 .card-wide { grid-column: 1 / -1; }
 /* 窄屏下把字数和「只看预览」单独放一行，别跟工具栏抢宽度（挤一起会变成两排按钮） */
 @media (max-width: 900px) {
