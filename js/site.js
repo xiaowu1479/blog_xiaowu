@@ -467,6 +467,19 @@ const SITE = {
     };
   }
 
+  /** 作品图标：FontAwesome 类名，或上传 / 外链的图片地址 */
+  function isImageIcon(v) {
+    return /^(?:https?:)?\/\//i.test(v) || /^data:image\//i.test(v) || /^img\//i.test(v)
+      || /\.(?:svg|png|jpe?g|gif|webp|avif)(?:[?#]|$)/i.test(v);
+  }
+
+  function workIcon(icon) {
+    const value = (icon || '').trim() || 'fa-solid fa-code';
+    return isImageIcon(value)
+      ? make('img', { src: value, alt: '', loading: 'lazy' })
+      : make('i', { class: value });
+  }
+
   function renderWorks(openDetail) {
     const list = $('#workList');
     if (!list) return;
@@ -480,8 +493,9 @@ const SITE = {
     }
 
     SITE.works.forEach((w, i) => {
+      const imageIcon = isImageIcon((w.icon || '').trim());
       const card = linkOrBlock(w.href, 'work', [
-        make('div', { class: 'work-ico qk-' + (i % 6) }, [make('i', { class: w.icon })]),
+        make('div', { class: 'work-ico qk-' + (i % 6) + (imageIcon ? ' is-img' : '') }, [workIcon(w.icon)]),
         make('div', { class: 'work-body' }, [
           make('h3', { class: 'work-title' }, [
             document.createTextNode(w.title),

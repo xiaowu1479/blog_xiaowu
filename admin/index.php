@@ -48,11 +48,11 @@ function entity_defs(): array
         'works' => [
             'title' => '作品集',
             'icon' => 'fa-solid fa-code',
-            'hint' => '「链接」留空时，前台点击会弹出「详情」内容。',
+            'hint' => '「链接」留空时，前台点击会弹出「详情」内容。图标可以填 Font Awesome 类名，也可以上传 / 填写图片地址。',
             'fields' => [
                 ['title', '标题', 'text', true],
                 ['year', '年份', 'text', false, '例如 2026 或 —'],
-                ['icon', '图标', 'text', false, 'FontAwesome 类名，如 fa-solid fa-image'],
+                ['icon', '图标', 'icon', false, 'Font Awesome 类名（如 fa-solid fa-image），或图片地址（img/logo.svg / https://…）；也可以直接上传'],
                 ['desc', '简介', 'text', false, '一两句话，卡片上显示'],
                 ['tags', '标签', 'text', false, '用逗号分隔，如 HTML,CSS,JS'],
                 ['href', '链接', 'text', false, '留空则前台点击弹详情'],
@@ -294,7 +294,13 @@ function handle_entity(string $table): void
     // 上传字段
     if (isset($_FILES['file']) && ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
         $path = save_upload('file');
-        if ($path !== null) $data[$table === 'contacts' ? 'img' : 'src'] = $path;
+        if ($path !== null) {
+            $data[match ($table) {
+                'contacts' => 'img',
+                'works' => 'icon',
+                default => 'src',
+            }] = $path;
+        }
     }
 
     if (empty($data['sort'])) {
@@ -307,6 +313,20 @@ function handle_entity(string $table): void
 }
 
 /* ============================ 页面片段 ============================ */
+/** 值是图片地址（站内 img/…、外链或 data URI），而不是 FontAwesome 类名 */
+function is_image_src(string $v): bool
+{
+    if ($v === '') return false;
+    return (bool) preg_match('~^(?:https?:)?//|^data:image/|^img/~i', $v)
+        || (bool) preg_match('~\.(?:svg|png|jpe?g|gif|webp|avif)(?:[?#]|$)~i', $v);
+}
+
+/** 后台预览图地址：站内相对路径补上 ../，外链 / data URI 原样输出 */
+function preview_src(string $v): string
+{
+    return preg_match('~^(?:https?:)?//|^data:~i', $v) ? $v : '../' . ltrim($v, '/');
+}
+
 function render_field(array $f, array $row): string
 {
     [$key, $label, $type] = $f;
@@ -377,13 +397,22 @@ function render_field(array $f, array $row): string
                   . '<p class="hint md-hint">左边写，右边就是发布后的样子（用的和前台同一套渲染器）。</p>'
                   . '</div>';
             break;
+        case 'icon':
+            $out .= '<div class="upload-row">'
+                  . '<input id="f_' . $name . '" type="text" name="' . $name . '" value="' . h($value) . '" placeholder="fa-solid fa-code 或 img/logo.svg">'
+                  . '<input type="file" name="file" accept="image/*">'
+                  . '</div>';
+            if (is_image_src($value)) {
+                $out .= '<div class="thumb"><img src="' . h(preview_src($value)) . '" alt=""></div>';
+            }
+            break;
         case 'upload':
             $out .= '<div class="upload-row">'
                   . '<input id="f_' . $name . '" type="text" name="' . $name . '" value="' . h($value) . '" placeholder="img/xxx.jpg">'
                   . '<input type="file" name="file" accept="image/*">'
                   . '</div>';
-            if ($value !== '' && str_starts_with($value, 'img/')) {
-                $out .= '<div class="thumb"><img src="../' . h($value) . '" alt=""></div>';
+            if (is_image_src($value)) {
+                $out .= '<div class="thumb"><img src="' . h(preview_src($value)) . '" alt=""></div>';
             }
             break;
         default:
