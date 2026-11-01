@@ -164,8 +164,8 @@ function login_view(): void
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>登录 · 后台</title>
 <link rel="stylesheet" href="../css/all.min.css">
-<link rel="stylesheet" href="../css/md.css">
-<link rel="stylesheet" href="assets/admin.css">
+<link rel="stylesheet" href="../css/md.css?v=<?= (int)@filemtime(__DIR__ . '/../css/md.css') ?>">
+<link rel="stylesheet" href="assets/admin.css?v=<?= (int)@filemtime(__DIR__ . '/assets/admin.css') ?>">
 </head>
 <body class="login-body">
 <form class="login-card" method="post" action="index.php?p=login">
@@ -698,8 +698,8 @@ function layout(string $title, string $content, string $active): void
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= h($title) ?> · 后台</title>
 <link rel="stylesheet" href="../css/all.min.css">
-<link rel="stylesheet" href="../css/md.css">
-<link rel="stylesheet" href="assets/admin.css">
+<link rel="stylesheet" href="../css/md.css?v=<?= (int)@filemtime(__DIR__ . '/../css/md.css') ?>">
+<link rel="stylesheet" href="assets/admin.css?v=<?= (int)@filemtime(__DIR__ . '/assets/admin.css') ?>">
 </head>
 <body>
 <aside class="side">
