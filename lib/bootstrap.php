@@ -572,18 +572,74 @@ function optimize_upload(string $path, string $mime): string
 }
 
 /**
- * 保存上传文件，返回相对站点根目录的路径（如 img/uploads/20261029-ab12cd34.jpg）。
- * 校验顺序：上传错误 → 大小 → finfo 真实 MIME → 从白名单反查扩展名。
- * 落盘后再过一遍 optimize_upload()，手机直出的几 MB 照片会压到几百 KB。
+ * 取 $_FILES 里的单个文件；没传文件返回 null。
+ * 多文件（name="files[]"）用 upload_field_items() 拆成一项一个文件。
  */
-function save_upload(string $field, string $subdir = 'img/uploads'): ?string
+function upload_field(string $field): ?array
 {
-    if (!isset($_FILES[$field]) || ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
-        return null;
-    }
+    if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) return null;
     $f = $_FILES[$field];
-    if ($f['error'] !== UPLOAD_ERR_OK) err('上传失败，错误码 ' . (int)$f['error']);
-    if ($f['size'] <= 0 || $f['size'] > UPLOAD_MAX) err('图片大小需在 5MB 以内');
+    if (!isset($f['error']) || is_array($f['error'])) return null;
+    if ((int)$f['error'] === UPLOAD_ERR_NO_FILE) return null;
+    return $f;
+}
+
+/**
+ * 把 $_FILES[$field] 规范成「一项一个文件」的数组，单文件和多文件都能吃。
+ * 没有文件时返回空数组；错误码原样放在每项的 error 里，由调用方决定怎么提示。
+ *
+ * @return array<int, array{name: string, type: string, tmp_name: string, error: int, size: int}>
+ */
+function upload_field_items(string $field): array
+{
+    if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) return [];
+    $f = $_FILES[$field];
+    if (!isset($f['error'])) return [];
+
+    if (!is_array($f['error'])) {
+        if ((int)$f['error'] === UPLOAD_ERR_NO_FILE) return [];
+        return [[
+            'name'     => (string)($f['name'] ?? ''),
+            'type'     => (string)($f['type'] ?? ''),
+            'tmp_name' => (string)($f['tmp_name'] ?? ''),
+            'error'    => (int)$f['error'],
+            'size'     => (int)($f['size'] ?? 0),
+        ]];
+    }
+
+    $items = [];
+    foreach (array_keys($f['error']) as $i) {
+        $error = (int)$f['error'][$i];
+        if ($error === UPLOAD_ERR_NO_FILE) continue;
+        $items[] = [
+            'name'     => (string)($f['name'][$i] ?? ''),
+            'type'     => (string)($f['type'][$i] ?? ''),
+            'tmp_name' => (string)($f['tmp_name'][$i] ?? ''),
+            'error'    => $error,
+            'size'     => (int)($f['size'][$i] ?? 0),
+        ];
+    }
+    return $items;
+}
+
+/**
+ * 保存一个已上传的图片文件（$_FILES 里的单项）。
+ * 校验顺序：上传错误 → 大小 → finfo 真实 MIME → 从白名单反查扩展名；落盘后自动压缩。
+ *
+ * 返回 ['path' => ?string, 'error' => string]：失败不输出、不退出，
+ * 这样批量上传可以「能传的传、传不了的逐条报」，而不是一张坏图让整批失败。
+ *
+ * @return array{path: ?string, error: string}
+ */
+function save_upload_file(array $f, string $subdir = 'img/uploads'): array
+{
+    if ((int)($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        return ['path' => null, 'error' => '上传失败，错误码 ' . (int)($f['error'] ?? 0)];
+    }
+    $size = (int)($f['size'] ?? 0);
+    if ($size <= 0 || $size > UPLOAD_MAX) {
+        return ['path' => null, 'error' => '图片大小需在 5MB 以内'];
+    }
 
     $allow = [
         'image/jpeg' => 'jpg',
@@ -594,22 +650,45 @@ function save_upload(string $field, string $subdir = 'img/uploads'): ?string
         'image/vnd.microsoft.icon' => 'ico',
         'image/x-icon' => 'ico',
     ];
+    $tmp = (string)($f['tmp_name'] ?? '');
+    if ($tmp === '' || !is_file($tmp)) {
+        return ['path' => null, 'error' => '临时文件不见了，请重试'];
+    }
     $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime = (string)$finfo->file($f['tmp_name']);
-    if (!isset($allow[$mime])) err('只允许 jpg / png / gif / webp / svg / ico，当前是 ' . h($mime));
+    $mime = (string)$finfo->file($tmp);
+    if (!isset($allow[$mime])) {
+        return ['path' => null, 'error' => '只允许 jpg / png / gif / webp / svg / ico，当前是 ' . $mime];
+    }
 
     $dir = APP_ROOT . '/' . trim($subdir, '/');
-    if (!is_dir($dir) && !@mkdir($dir, 0755, true)) err('无法创建目录 ' . h($subdir));
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true)) {
+        return ['path' => null, 'error' => '无法创建目录 ' . trim($subdir, '/')];
+    }
 
     $name = date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $allow[$mime];
-    if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) err('写入文件失败，请检查目录权限');
+    if (!move_uploaded_file($tmp, $dir . '/' . $name)) {
+        return ['path' => null, 'error' => '写入文件失败，请检查目录权限'];
+    }
 
     // 压缩失败不影响上传：内部全部兜底，最差就是原图。
     // 注意返回值可能是改名后的路径（大的无透明 PNG 会转存成 JPEG）
     $final = optimize_upload($dir . '/' . $name, $mime);
-    $name = basename($final);
 
-    return trim($subdir, '/') . '/' . $name;
+    return ['path' => trim($subdir, '/') . '/' . basename($final), 'error' => ''];
+}
+
+/**
+ * 保存上传文件，返回相对站点根目录的路径（如 img/uploads/20261029-ab12cd34.jpg）。
+ * 单文件的便捷包装：校验不过就直接 err()（表单提交场景要的就是这个行为）。
+ */
+function save_upload(string $field, string $subdir = 'img/uploads'): ?string
+{
+    $f = upload_field($field);
+    if ($f === null) return null;
+
+    $r = save_upload_file($f, $subdir);
+    if ($r['error'] !== '') err($r['error']);
+    return $r['path'];
 }
 
 /**

@@ -317,6 +317,21 @@
       });
     }
 
+    /** 从媒体库挑一张已经传过的图，插成 ![](img/uploads/…)；弹窗在 assets/media.js 里 */
+    function pickFromMedia() {
+      if (!window.ZhsMedia || typeof window.ZhsMedia.open !== 'function') {
+        setStatus('媒体库脚本没加载出来，刷新页面再试', true);
+        return;
+      }
+      window.ZhsMedia.open(function (rel, item) {
+        var alt = (item && item.name ? item.name : '图片').replace(/\.[^.]+$/, '').replace(/[[\]]/g, '').trim();
+        insertText(ta, '![' + (alt || '图片') + '](' + rel + ')');
+        paint();
+        setStatus('已插入媒体库图片');
+        window.setTimeout(function () { setStatus(''); }, 1600);
+      });
+    }
+
     var repaint = debounce(paint, 120);
     ta.addEventListener('input', function () {
       repaint();
@@ -418,6 +433,7 @@
       btn.addEventListener('click', function () {
         var act = btn.getAttribute('data-md-act');
         if (act === 'img') { picker.click(); return; }   // 选本地文件上传，不再插占位路径
+        if (act === 'media') { pickFromMedia(); return; } // 已有图片：直接在媒体库里挑，不重复上传
         var fn = ACTIONS[act];
         if (fn) fn(ta);
         paint();

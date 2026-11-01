@@ -3,7 +3,7 @@
  * admin/index.php —— 后台（单入口）
  *
  * 路由：index.php?p=<页面>&do=<动作>
- *   p=login | dashboard | settings | friends | works | posts | photos | contacts | password
+ *   p=login | dashboard | settings | friends | works | posts | photos | media | contacts | password
  * 所有写操作一律 POST + CSRF 校验，成功后 302 回列表（PRG，避免刷新重复提交）。
  */
 declare(strict_types=1);
@@ -11,6 +11,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/lib/bootstrap.php';
 require dirname(__DIR__) . '/lib/db.php';
 require dirname(__DIR__) . '/lib/repo.php';
+require dirname(__DIR__) . '/lib/media.php';
 require dirname(__DIR__) . '/lib/updater.php';
 require __DIR__ . '/update.php';
 
@@ -100,7 +101,7 @@ function entity_defs(): array
         'photos' => [
             'title' => '相册',
             'icon' => 'fa-solid fa-images',
-            'hint' => '「图片地址」留空会渲染成「待补充」占位格。可以直接上传。',
+            'hint' => '「图片地址」留空会渲染成「待补充」占位格。可以直接上传，也可以点输入框旁的「媒体库」按钮复用已经传过的图。',
             'fields' => [
                 ['src', '图片地址', 'upload', false, '上传后自动填入；也可手填 img/xxx.jpg'],
                 ['caption', '图说', 'text', false],
@@ -314,6 +315,140 @@ function handle_entity(string $table): void
     go('index.php?p=' . $table);
 }
 
+/* ============================ 媒体库 ============================ */
+function handle_media(): void
+{
+    $do = get_str('do', 'upload');
+
+    if ($do === 'delete') {
+        $rel = post_str('path', 300);
+        $abs = media_abs($rel);
+        if ($abs === null) {
+            flash('图片不存在，或路径不合法', 'err');
+            go('index.php?p=media');
+        }
+        $name = basename($abs);
+        $usage = media_usage_map([$name])[$name] ?? [];
+        if ($usage) {
+            flash('「' . $name . '」还在使用中：' . implode('、', array_slice($usage, 0, 4))
+                . '。先把这些地方换成别的图，再来删。', 'err');
+            go('index.php?p=media');
+        }
+        if (!media_delete($rel)) {
+            flash('删除失败，请检查 img/uploads 目录权限', 'err');
+            go('index.php?p=media');
+        }
+        flash('已删除 ' . $name);
+        go('index.php?p=media');
+    }
+
+    if ($do !== 'upload') err('未知操作');
+
+    // 整个请求体超过 post_max_size 时 PHP 会把 $_POST / $_FILES 清空，这里给人话提示
+    if (!$_POST && !$_FILES && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        flash('上传内容超过服务器限制（post_max_size），一次少传几张试试', 'err');
+        go('index.php?p=media');
+    }
+
+    $r = media_save_many('files');
+    if (!$r['saved'] && !$r['errors']) {
+        flash('没有收到文件，或者文件没传完', 'err');
+        go('index.php?p=media');
+    }
+    if ($r['errors']) {
+        $tail = $r['saved'] ? '（已成功 ' . count($r['saved']) . ' 张）' : '';
+        flash('有 ' . count($r['errors']) . ' 张没传上去' . $tail . '：' . implode('；', array_slice($r['errors'], 0, 3)), 'err');
+        go('index.php?p=media');
+    }
+
+    flash('已上传 ' . count($r['saved']) . ' 张图片');
+    go('index.php?p=media');
+}
+
+function render_media(): void
+{
+    $q = get_str('q', '');
+    $unusedOnly = get_str('filter', '') === 'unused';
+
+    $all = media_list('');                    // 全量（带引用信息），统计和筛选都基于它
+    $items = $q === ''
+        ? $all
+        : array_values(array_filter($all, fn(array $it): bool => stripos($it['name'], $q) !== false));
+    if ($unusedOnly) {
+        $items = array_values(array_filter($items, fn(array $it): bool => !$it['usage']));
+    }
+
+    $bytes = array_sum(array_column($all, 'size'));
+    $orphans = count(array_filter($all, static fn(array $it): bool => !$it['usage']));
+
+    ob_start();
+    ?>
+    <section class="card">
+      <h2><span class="sec-ico"><i class="fa-solid fa-cloud-arrow-up"></i></span>上传新图</h2>
+      <form class="media-upload" method="post" enctype="multipart/form-data" action="index.php?p=media&do=upload">
+        <?= csrf_field() ?>
+        <input type="file" name="files[]" accept="image/*" multiple required>
+        <button type="submit" class="btn-primary">上传到媒体库</button>
+      </form>
+      <p class="hint">可一次选多张。jpg / png / gif / webp / svg / ico，单张 ≤5MB，上传后自动压缩。
+        这里传过的图会一直留着——文章正文、相册、头像、赞赏码等任何要填图片的地方，点输入框旁的「媒体库」就能直接复用。</p>
+    </section>
+
+    <section class="card">
+      <h2><span class="sec-ico"><i class="fa-solid fa-photo-film"></i></span>媒体库 · <?= count($all) ?> 张</h2>
+      <div class="media-stat-row">
+        <span>占用空间 <b><?= h(media_size_text((int)$bytes)) ?></b></span>
+        <span>未被引用 <b><?= (int)$orphans ?></b> 张</span>
+        <?php if ($q !== '' || $unusedOnly): ?><span>筛选出 <b><?= count($items) ?></b> 张</span><?php endif; ?>
+      </div>
+
+      <form class="media-search" method="get" action="index.php">
+        <input type="hidden" name="p" value="media">
+        <input type="text" name="q" value="<?= h($q) ?>" placeholder="按文件名搜索，如 20261101">
+        <label class="switch"><input type="checkbox" name="filter" value="unused"<?= $unusedOnly ? ' checked' : '' ?>> 只看未引用</label>
+        <button type="submit" class="btn-ghost">筛选</button>
+        <?php if ($q !== '' || $unusedOnly): ?><a class="btn-ghost" href="index.php?p=media">清空</a><?php endif; ?>
+      </form>
+
+      <?php if (!$items): ?>
+        <p class="empty"><?= $all ? '没有符合条件的图片。' : '媒体库还是空的，上面传几张试试。' ?></p>
+      <?php else: ?>
+      <div class="media-grid">
+        <?php foreach ($items as $it): ?>
+        <figure class="media-item">
+          <a class="media-thumb" href="../<?= h($it['rel']) ?>" target="_blank" rel="noopener" title="在新标签页打开原图">
+            <img src="../<?= h($it['rel']) ?>" alt="<?= h($it['name']) ?>" loading="lazy">
+          </a>
+          <figcaption>
+            <span class="media-name" title="<?= h($it['name']) ?>"><?= h($it['name']) ?></span>
+            <span class="media-meta">
+              <?= h(media_size_text($it['size'])) ?> · <?= h(date('Y-m-d H:i', $it['mtime'])) ?>
+              <?php if ($it['usage']): ?>
+                <span class="media-badge" title="被引用：<?= h(implode('、', $it['usage'])) ?>">使用中 <?= count($it['usage']) ?></span>
+              <?php else: ?>
+                <span class="media-badge orphan">未引用</span>
+              <?php endif; ?>
+            </span>
+            <div class="media-ops">
+              <button type="button" class="btn-mini" data-media-copy="<?= h($it['rel']) ?>">
+                <i class="fa-regular fa-copy"></i> 复制路径</button>
+              <form method="post" action="index.php?p=media&do=delete"
+                    onsubmit="return confirm('确定删除这张图吗？删掉的是整个文件，删了找不回来。')">
+                <?= csrf_field() ?>
+                <input type="hidden" name="path" value="<?= h($it['rel']) ?>">
+                <button type="submit" class="btn-mini danger" title="删除文件"><i class="fa-solid fa-trash"></i></button>
+              </form>
+            </div>
+          </figcaption>
+        </figure>
+        <?php endforeach; ?>
+      </div>
+      <?php endif; ?>
+    </section>
+    <?php
+    layout('媒体库', (string)ob_get_clean(), 'media');
+}
+
 /* ============================ 页面片段 ============================ */
 /** 值是图片地址（站内 img/…、外链或 data URI），而不是 FontAwesome 类名 */
 function is_image_src(string $v): bool
@@ -327,6 +462,13 @@ function is_image_src(string $v): bool
 function preview_src(string $v): string
 {
     return preg_match('~^(?:https?:)?//|^data:~i', $v) ? $v : '../' . ltrim($v, '/');
+}
+
+/** 上传框旁边的「媒体库」按钮：点开已有图片列表，选中后把路径写回输入框（行为在 assets/media.js） */
+function media_pick_button(string $inputId): string
+{
+    return '<button type="button" class="btn-mini" data-media-pick="' . h($inputId) . '"'
+         . ' title="从媒体库选择已有图片，不用重新上传"><i class="fa-solid fa-photo-film"></i></button>';
 }
 
 /** 标签页图标的 <link>：登录页和后台框架共用；按扩展名给出 MIME */
@@ -389,6 +531,7 @@ function render_field(array $f, array $row): string
                 ['fence', '代码块', 'fa-file-code'],
                 ['link', '链接', 'fa-link'],
                 ['img', '插入本地图片（选文件上传）', 'fa-image'],
+                ['media', '插入媒体库里的图片（不用重复上传）', 'fa-photo-film'],
             ];
             $out .= '<div class="md" data-md>'
                   . '<div class="md-bar">';
@@ -421,6 +564,7 @@ function render_field(array $f, array $row): string
         case 'icon':
             $out .= '<div class="upload-row">'
                   . '<input id="f_' . $name . '" type="text" name="' . $name . '" value="' . h($value) . '" placeholder="fa-solid fa-code 或 img/logo.svg">'
+                  . media_pick_button('f_' . $name)
                   . '<input type="file" name="file_' . $name . '" accept="image/*">'
                   . '</div>';
             if (is_image_src($value)) {
@@ -430,6 +574,7 @@ function render_field(array $f, array $row): string
         case 'upload':
             $out .= '<div class="upload-row">'
                   . '<input id="f_' . $name . '" type="text" name="' . $name . '" value="' . h($value) . '" placeholder="img/xxx.jpg">'
+                  . media_pick_button('f_' . $name)
                   . '<input type="file" name="file_' . $name . '" accept="image/*">'
                   . '</div>';
             if (is_image_src($value)) {
@@ -571,6 +716,7 @@ function render_settings(): void
             <ul class="tip-list">
               <li><i class="fa-solid fa-circle-check"></i><span>前台内容来自 <code>api.php</code>，保存后刷新前台即可看到。</span></li>
               <li><i class="fa-solid fa-circle-check"></i><span>图片上传上限 5MB，音频上限 20MB；超限会直接提示。</span></li>
+              <li><i class="fa-solid fa-circle-check"></i><span>图片不用重复上传：输入框旁的「媒体库」按钮可以直接选已经传过的图。</span></li>
               <li><i class="fa-solid fa-circle-check"></i><span>清空「音频地址」并保存，就会关闭首页音乐。</span></li>
               <li><i class="fa-solid fa-circle-check"></i><span>前台没更新时，<kbd>Ctrl + F5</kbd> 强刷一下浏览器缓存。</span></li>
               <li><i class="fa-solid fa-circle-check"></i><span>数据备份：直接拷走 <code>data/</code> 目录即可。</span></li>
@@ -658,6 +804,7 @@ function render_dashboard(): void
     }
     $weakPwd = password_verify('admin123', setting_get('admin_hash'));
     $size = is_file(db_file()) ? filesize(db_file()) : 0;
+    $mediaCount = count(media_list('', false));   // 媒体库不在实体表里，单独统计
 
     ob_start();
     ?>
@@ -674,6 +821,11 @@ function render_dashboard(): void
           <span><?= h($s['label']) ?><?= $s['hidden'] ? '（隐藏 ' . (int)$s['hidden'] . '）' : '' ?></span>
         </a>
       <?php endforeach; ?>
+      <a class="stat" href="index.php?p=media">
+        <i class="fa-solid fa-photo-film"></i>
+        <b><?= (int)$mediaCount ?></b>
+        <span>媒体库</span>
+      </a>
     </div>
 
     <section class="card">
@@ -700,6 +852,7 @@ function layout(string $title, string $content, string $active): void
         'posts' => ['博客', 'fa-solid fa-pen-nib'],
         'categories' => ['分类', 'fa-solid fa-folder-tree'],
         'photos' => ['相册', 'fa-solid fa-images'],
+        'media' => ['媒体库', 'fa-solid fa-photo-film'],
         'contacts' => ['社交图标', 'fa-solid fa-share-nodes'],
         'update' => ['系统更新', 'fa-solid fa-cloud-arrow-down'],
         'password' => ['修改密码', 'fa-solid fa-key'],
@@ -744,6 +897,7 @@ function layout(string $title, string $content, string $active): void
   <?php if ($msg): ?><div class="flash <?= h($msg['t']) ?>"><?= h($msg['m']) ?></div><?php endif; ?>
   <?= $content ?>
 </main>
+<script src="assets/media.js?v=<?= (int)@filemtime(__DIR__ . '/assets/media.js') ?>"></script>
 <?php if ($active === 'posts'): ?>
 <script src="../js/markdown.js?v=<?= filemtime(__DIR__ . '/../js/markdown.js') ?>"></script>
 <script src="assets/editor.js?v=<?= filemtime(__DIR__ . '/assets/editor.js') ?>"></script>
@@ -777,6 +931,7 @@ csrf_token();          // 进后台就确保 CSRF Cookie 存在
 if (is_post()) {
     csrf_check();
     if ($p === 'settings') handle_settings();
+    elseif ($p === 'media') handle_media();
     elseif ($p === 'password') handle_password();
     elseif ($p === 'update') handle_update_action();
     elseif (array_key_exists($p, entity_defs())) handle_entity($p);
@@ -785,6 +940,7 @@ if (is_post()) {
 
 switch ($p) {
     case 'settings': render_settings(); break;
+    case 'media': render_media(); break;
     case 'password': render_password(); break;
     case 'update': render_update(); break;
     case 'dashboard': render_dashboard(); break;
