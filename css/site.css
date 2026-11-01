@@ -793,10 +793,12 @@ a.work:hover,
 
 /* 图标用图片（上传或外链）时换成中性底色，避免和渐变色打架 */
 .work-ico.is-img { background: var(--ui-card-2); }
+/* 不留内边距，让图片尽量铺满 40×40 的方块（宽图仍按比例缩放，不会被裁切） */
 .work-ico img {
+  display: block;
   width: 100%;
   height: 100%;
-  padding: 5px;
+  border-radius: inherit;
   object-fit: contain;
 }
 
