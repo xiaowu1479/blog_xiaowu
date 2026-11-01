@@ -172,7 +172,7 @@
                 <div class="mode-switch__circle"></div>
               </div>
             </div>
-            <a class="sb-admin" href="admin/" title="进入后台管理">
+            <a class="sb-admin" href="admin/" target="_blank" rel="noopener" title="进入后台管理">
               <i class="fa-solid fa-sliders"></i><span>后台</span>
             </a>
           </div>

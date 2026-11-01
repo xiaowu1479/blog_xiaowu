@@ -187,6 +187,7 @@ function handle_settings(): void
     $scalars = [
         'name' => 120, 'sign' => 200, 'status' => 120, 'avatar' => 300, 'avatar_text' => 4,
         'about_version' => 120, 'icp_text' => 120, 'icp_href' => 300, 'since' => 40, 'year' => 20,
+        'music_src' => 500, 'music_title' => 120, 'music_cover' => 300,
     ];
     $values = [];
     foreach ($scalars as $k => $max) $values[$k] = post_str($k, $max);
@@ -201,11 +202,15 @@ function handle_settings(): void
 
     if ($values['name'] === '') err('站点名称不能为空');
 
-    // 头像 / 赞赏码可以直接传图
-    foreach (['avatar' => 'avatar_file', 'pay_wechat' => 'pay_wechat_file', 'pay_alipay' => 'pay_alipay_file'] as $key => $field) {
-        $path = save_upload($field);
+    // 头像 / 赞赏码 / 音乐封面可以直接传图（文件名和表单里的 file_<字段名> 对应）
+    foreach (['avatar', 'pay_wechat', 'pay_alipay', 'music_cover'] as $key) {
+        $path = save_upload('file_' . $key);
         if ($path !== null) $values[$key] = $path;
     }
+
+    // 首页音乐也可以直接传音频文件；上传的文件优先于文本框里的地址
+    $audio = save_audio('file_music_src');
+    if ($audio !== null) $values['music_src'] = $audio;
 
     setting_set_many($values);
     flash('站点信息已保存');
@@ -291,16 +296,11 @@ function handle_entity(string $table): void
         if (!empty($f[3]) && trim((string)$data[$f[0]]) === '') err($f[1] . '不能为空');
     }
 
-    // 上传字段
-    if (isset($_FILES['file']) && ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
-        $path = save_upload('file');
-        if ($path !== null) {
-            $data[match ($table) {
-                'contacts' => 'img',
-                'works' => 'icon',
-                default => 'src',
-            }] = $path;
-        }
+    // 上传字段：每个上传框用独立的名字，一个表单里有多个 file 也不会互相覆盖
+    foreach ($def['fields'] as $f) {
+        if (!in_array($f[2], ['upload', 'icon'], true)) continue;
+        $path = save_upload('file_' . $f[0]);
+        if ($path !== null) $data[$f[0]] = $path;
     }
 
     if (empty($data['sort'])) {
@@ -346,7 +346,7 @@ function render_field(array $f, array $row): string
             break;
         case 'bool':
             $checked = $value === '' ? ($row ? false : true) : $value === '1';
-            $out .= '<label class="switch"><input type="checkbox" name="' . $name . '" value="1"'
+            $out .= '<label class="switch"><input id="f_' . $name . '" type="checkbox" name="' . $name . '" value="1"'
                   . ($checked ? ' checked' : '') . '> <span>启用</span></label>';
             break;
         case 'select':
@@ -397,22 +397,31 @@ function render_field(array $f, array $row): string
                   . '<p class="hint md-hint">左边写，右边就是发布后的样子（用的和前台同一套渲染器）。</p>'
                   . '</div>';
             break;
+        case 'audio':
+            $out .= '<div class="upload-row">'
+                  . '<input id="f_' . $name . '" type="text" name="' . $name . '" value="' . h($value) . '" placeholder="https://…/song.mp3 或 music/song.mp3">'
+                  . '<input type="file" name="file_' . $name . '" accept="audio/*">'
+                  . '</div>';
+            if ($value !== '') {
+                $out .= '<div class="thumb"><audio controls preload="none" src="' . h(preview_src($value)) . '"></audio></div>';
+            }
+            break;
         case 'icon':
             $out .= '<div class="upload-row">'
                   . '<input id="f_' . $name . '" type="text" name="' . $name . '" value="' . h($value) . '" placeholder="fa-solid fa-code 或 img/logo.svg">'
-                  . '<input type="file" name="file" accept="image/*">'
+                  . '<input type="file" name="file_' . $name . '" accept="image/*">'
                   . '</div>';
             if (is_image_src($value)) {
-                $out .= '<div class="thumb"><img src="' . h(preview_src($value)) . '" alt=""></div>';
+                $out .= '<div class="thumb"><img src="' . h(preview_src($value)) . '" alt="" onerror="this.remove()"></div>';
             }
             break;
         case 'upload':
             $out .= '<div class="upload-row">'
                   . '<input id="f_' . $name . '" type="text" name="' . $name . '" value="' . h($value) . '" placeholder="img/xxx.jpg">'
-                  . '<input type="file" name="file" accept="image/*">'
+                  . '<input type="file" name="file_' . $name . '" accept="image/*">'
                   . '</div>';
             if (is_image_src($value)) {
-                $out .= '<div class="thumb"><img src="' . h(preview_src($value)) . '" alt=""></div>';
+                $out .= '<div class="thumb"><img src="' . h(preview_src($value)) . '" alt="" onerror="this.remove()"></div>';
             }
             break;
         default:
@@ -512,52 +521,92 @@ function render_entity(string $table, array $def): void
 function render_settings(): void
 {
     $s = settings_all();
+    // 老库没有音乐字段时，表单里先显示内置默认值；保存一次就会写进库
+    $s += [
+        'music_src' => setting_get('music_src', DEFAULT_MUSIC_SRC),
+        'music_title' => setting_get('music_title', DEFAULT_MUSIC_TITLE),
+        'music_cover' => setting_get('music_cover', DEFAULT_MUSIC_COVER),
+    ];
     ob_start();
     ?>
     <form method="post" enctype="multipart/form-data" action="index.php?p=settings">
       <?= csrf_field() ?>
-      <div class="grid-2">
-        <section class="card">
-          <h2>名片</h2>
-          <?php
-          echo render_field(['name', '站点 / 昵称', 'text', true], $s);
-          echo render_field(['sign', '签名', 'text'], $s);
-          echo render_field(['status', '在线状态', 'text', false, '例如 iPhone 在线'], $s);
-          echo render_field(['avatar', '头像', 'upload', false, '留空保持原样；上传新图会自动替换'], $s);
-          echo render_field(['avatar_text', '头像兜底文字', 'text', false, '头像加载失败时显示的单个字'], $s);
-          ?>
-        </section>
+      <div class="settings-grid">
+        <div class="settings-col">
+          <section class="card">
+            <h2><span class="sec-ico"><i class="fa-solid fa-id-card"></i></span>名片</h2>
+            <?php
+            echo render_field(['name', '站点 / 昵称', 'text', true], $s);
+            echo render_field(['sign', '签名', 'text'], $s);
+            echo render_field(['status', '在线状态', 'text', false, '例如 iPhone 在线'], $s);
+            echo render_field(['avatar', '头像', 'upload', false, '留空保持原样；上传新图会自动替换'], $s);
+            echo render_field(['avatar_text', '头像兜底文字', 'text', false, '头像加载失败时显示的单个字'], $s);
+            ?>
+          </section>
 
-        <section class="card">
-          <h2>内容字段</h2>
-          <?php
-          echo render_field(['skills', '技能标签', 'textarea', false, '每行一条，格式「标签|颜色」，如 CSS|#f70808', 5], $s);
-          echo render_field(['about_lines', '关于弹窗条目', 'textarea', false, '每行一条，格式「图标|颜色|文字」', 4], $s);
-          echo render_field(['sites', '旗下站点', 'textarea', false, '每行一条，格式「名称|网址」，如 我的博客|https://example.com；不写网址就是纯文字', 4], $s);
-          ?>
-        </section>
+          <section class="card">
+            <h2><span class="sec-ico"><i class="fa-solid fa-qrcode"></i></span>赞赏码</h2>
+            <?php
+            echo render_field(['pay_wechat', '微信赞赏图', 'upload', false, '放图后前台自动显示，不再是占位'], $s);
+            echo render_field(['pay_alipay', '支付宝图', 'upload', false], $s);
+            ?>
+          </section>
 
-        <section class="card">
-          <h2>赞赏码</h2>
-          <?php
-          echo render_field(['pay_wechat', '微信赞赏图', 'upload', false, '放图后前台自动显示，不再是占位'], $s);
-          echo render_field(['pay_alipay', '支付宝图', 'upload', false], $s);
-          ?>
-        </section>
+          <section class="card tip-card">
+            <h2><span class="sec-ico"><i class="fa-solid fa-lightbulb"></i></span>小提示</h2>
+            <ul class="tip-list">
+              <li><i class="fa-solid fa-circle-check"></i><span>前台内容来自 <code>api.php</code>，保存后刷新前台即可看到。</span></li>
+              <li><i class="fa-solid fa-circle-check"></i><span>图片上传上限 5MB，音频上限 20MB；超限会直接提示。</span></li>
+              <li><i class="fa-solid fa-circle-check"></i><span>清空「音频地址」并保存，就会关闭首页音乐。</span></li>
+              <li><i class="fa-solid fa-circle-check"></i><span>前台没更新时，<kbd>Ctrl + F5</kbd> 强刷一下浏览器缓存。</span></li>
+              <li><i class="fa-solid fa-circle-check"></i><span>数据备份：直接拷走 <code>data/</code> 目录即可。</span></li>
+              <li><i class="fa-solid fa-circle-check"></i><span>本页所有修改都要点下方「保存全部设置」才会生效。</span></li>
+            </ul>
+          </section>
+        </div>
 
-        <section class="card">
-          <h2>页脚与开关</h2>
+        <div class="settings-col">
+          <section class="card">
+            <h2><span class="sec-ico"><i class="fa-solid fa-layer-group"></i></span>内容字段</h2>
+            <?php
+            echo render_field(['skills', '技能标签', 'textarea', false, '每行一条，格式「标签|颜色」，如 CSS|#f70808', 5], $s);
+            echo render_field(['about_lines', '关于弹窗条目', 'textarea', false, '每行一条，格式「图标|颜色|文字」', 4], $s);
+            echo render_field(['sites', '旗下站点', 'textarea', false, '每行一条，格式「名称|网址」，如 我的博客|https://example.com；不写网址就是纯文字', 4], $s);
+            ?>
+          </section>
+
+          <section class="card">
+            <h2><span class="sec-ico"><i class="fa-solid fa-music"></i></span>首页音乐</h2>
+            <?php
+            echo render_field(['music_src', '音频地址 / 上传', 'audio', false, '填 MP3 直链或站内路径（music/xxx.mp3），也可以直接上传（mp3 / m4a / ogg / wav，≤20MB）；清空地址并保存可关闭首页音乐'], $s);
+            echo render_field(['music_title', '歌曲名', 'text', false, '鼠标悬停播放器时显示'], $s);
+            echo render_field(['music_cover', '封面', 'upload', false, '首页播放器左侧的小封面；留空保持原图'], $s);
+            ?>
+          </section>
+        </div>
+      </div>
+
+      <section class="card">
+        <h2><span class="sec-ico"><i class="fa-solid fa-sliders"></i></span>页脚与开关</h2>
+        <div class="settings-fields cols-4">
           <?php
           echo render_field(['icp_text', '备案文字', 'text'], $s);
           echo render_field(['icp_href', '备案链接', 'text'], $s);
           echo render_field(['since', '运行计时起点', 'text', false, 'ISO 格式，如 2020-01-07T00:00:00'], $s);
           echo render_field(['year', '页脚年份', 'text'], $s);
-          echo render_field(['welcome_toast', '欢迎提示条', 'bool'], $s);
-          echo render_field(['lock_inspect', '禁用右键/F12', 'bool'], $s);
           ?>
-        </section>
-      </div>
+        </div>
+        <h3 class="subhead">行为开关</h3>
+        <div class="settings-fields cols-2 switch-cards">
+          <?php
+          echo render_field(['welcome_toast', '欢迎提示条', 'bool', false, '页面右下角弹一条欢迎语；关掉后不再显示'], $s);
+          echo render_field(['lock_inspect', '禁用右键 / F12', 'bool', false, '只提高查看源码的门槛，挡不住直接抓接口'], $s);
+          ?>
+        </div>
+      </section>
+
       <div class="sticky-actions">
+        <span class="save-hint"><i class="fa-solid fa-circle-info"></i> 改完记得保存，前台刷新后生效</span>
         <button type="submit" class="btn-primary">保存全部设置</button>
       </div>
     </form>

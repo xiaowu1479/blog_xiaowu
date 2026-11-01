@@ -272,6 +272,47 @@ const SITE = {
     } catch (e) {}
   }
 
+  /* ---------------- 首页音乐 ---------------- */
+  function renderMusic() {
+    const audio = $('#sh-main-top-musicplay-b');
+    if (!audio || !SITE.music) return;
+
+    const music = SITE.music;
+    const src = (music.src || '').trim();
+    const player = document.querySelector('.hero-bar .left-4-1');
+    const netease = document.querySelector('.hero-bar .left-4-2');
+
+    if (src) {
+      if (audio.getAttribute('src') !== src) {
+        audio.src = src;
+        audio.load();
+      }
+    } else {
+      // 后台清空音频地址 = 关闭首页音乐（index.html 里的静态默认曲不再兜底）
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    }
+
+    // 没有音频时整块藏起来：留一个点了没反应的播放键更奇怪
+    if (player) player.style.display = src ? '' : 'none';
+    if (netease) netease.style.display = src ? '' : 'none';
+
+    const title = (music.title || '').trim();
+    const cover = $('#musicCover');
+    if (cover) {
+      if (music.cover) cover.src = music.cover;
+      cover.alt = title ? '正在播放：' + title : '正在播放';
+      if (title) cover.title = '正在播放：' + title;
+    }
+
+    if (title) {
+      const wrap = $('#sh-main-top-g-m');
+      if (wrap) wrap.setAttribute('lang', title);
+      if (player) player.setAttribute('aria-label', '正在播放：' + title);
+    }
+  }
+
   /* ---------------- 快捷入口 & 联系方式 ---------------- */
   function renderQuick() {
     const box = $('#quickLinks');
@@ -913,6 +954,7 @@ const SITE = {
       所有 render 函数都先清空容器，所以可以重复执行而不产生重复内容。 */
   function mountPage() {
     renderIdentity();
+    renderMusic();
     renderQuick();
     renderAbout();
     renderSites();

@@ -17,7 +17,13 @@ define('FLASH_COOKIE', 'zn_flash');
 define('AUTH_TTL', 60 * 60 * 24 * 7);      // 登录态 7 天
 define('COOKIE_TTL', 60 * 60 * 24 * 30);
 define('MAX_LEN', 2000);                    // 单字段 TEXT 上限
-define('UPLOAD_MAX', 5 * 1024 * 1024);      // 上传上限 5MB
+define('UPLOAD_MAX', 5 * 1024 * 1024);      // 图片上传上限 5MB
+define('AUDIO_MAX', 20 * 1024 * 1024);      // 音频上传上限 20MB
+
+// 首页音乐的出厂默认值（后台没保存过时兜底，和 index.html 里的静态内容一致）
+define('DEFAULT_MUSIC_SRC', 'https://music.163.com/song/media/outer/url?id=2099010964.mp3');
+define('DEFAULT_MUSIC_TITLE', '在你的身边');
+define('DEFAULT_MUSIC_COVER', 'img/zainideshenbian.jpg');
 
 date_default_timezone_set('Asia/Shanghai');
 
@@ -597,6 +603,47 @@ function save_upload(string $field, string $subdir = 'img/uploads'): ?string
     // 注意返回值可能是改名后的路径（大的无透明 PNG 会转存成 JPEG）
     $final = optimize_upload($dir . '/' . $name, $mime);
     $name = basename($final);
+
+    return trim($subdir, '/') . '/' . $name;
+}
+
+/**
+ * 保存上传的音频，返回相对站点根目录的路径（如 music/20261101-ab12cd34.mp3）。
+ * 只按 finfo 嗅探真实类型，不做转码；上限 20MB（PHP 的 upload_max_filesize 也要够）。
+ */
+function save_audio(string $field, string $subdir = 'music'): ?string
+{
+    if (!isset($_FILES[$field]) || ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+    $f = $_FILES[$field];
+    if ($f['error'] !== UPLOAD_ERR_OK) err('上传失败，错误码 ' . (int)$f['error']);
+    if ($f['size'] <= 0 || $f['size'] > AUDIO_MAX) err('音频大小需在 20MB 以内');
+
+    $allow = [
+        'audio/mpeg' => 'mp3',
+        'audio/mp3' => 'mp3',
+        'audio/mp4' => 'm4a',
+        'audio/x-m4a' => 'm4a',
+        'audio/aac' => 'aac',
+        'audio/ogg' => 'ogg',
+        'application/ogg' => 'ogg',
+        'audio/wav' => 'wav',
+        'audio/x-wav' => 'wav',
+        'audio/wave' => 'wav',
+        'audio/webm' => 'webm',
+        'audio/flac' => 'flac',
+        'audio/x-flac' => 'flac',
+    ];
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = (string)$finfo->file($f['tmp_name']);
+    if (!isset($allow[$mime])) err('只允许 mp3 / m4a / aac / ogg / wav / flac，当前是 ' . h($mime));
+
+    $dir = APP_ROOT . '/' . trim($subdir, '/');
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true)) err('无法创建目录 ' . h($subdir));
+
+    $name = date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $allow[$mime];
+    if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) err('写入文件失败，请检查目录权限');
 
     return trim($subdir, '/') . '/' . $name;
 }

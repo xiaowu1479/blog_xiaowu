@@ -197,6 +197,11 @@ function db_seed(PDO $pdo): void
         'since' => '2020-01-07T00:00:00',
         'year' => '2026',
 
+        // 首页音乐（清空 music_src 就是关闭首页音乐）
+        'music_src' => 'https://music.163.com/song/media/outer/url?id=2099010964.mp3',
+        'music_title' => '在你的身边',
+        'music_cover' => 'img/zainideshenbian.jpg',
+
         // 行为开关
         'lock_inspect' => '0',
         'welcome_toast' => '1',
