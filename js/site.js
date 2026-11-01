@@ -494,7 +494,8 @@ const SITE = {
 
     SITE.works.forEach((w, i) => {
       const imageIcon = isImageIcon((w.icon || '').trim());
-      const card = linkOrBlock(w.href, 'work', [
+      const hasDetail = !!(w.detail || '').trim();
+      const card = linkOrBlock(w.href, 'work' + (hasDetail && openDetail ? ' has-detail' : ''), [
         make('div', { class: 'work-ico qk-' + (i % 6) + (imageIcon ? ' is-img' : '') }, [workIcon(w.icon)]),
         make('div', { class: 'work-body' }, [
           make('h3', { class: 'work-title' }, [
@@ -513,7 +514,26 @@ const SITE = {
           if (openDetail) openDetail({ title: w.title, meta: w.year || '', body: w.detail || w.desc });
         }
       });
-      list.appendChild(card);
+
+      const item = make('div', { class: 'work-item' }, [card]);
+
+      // 有外链的作品点卡片会跳走，所以单独给一个「详情」按钮，详情不至于白填
+      if (hasDetail && openDetail) {
+        item.appendChild(make('button', {
+          class: 'work-detail',
+          type: 'button',
+          'aria-label': '查看「' + w.title + '」的详情',
+          onclick: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openDetail({ title: w.title, meta: w.year || '', body: w.detail });
+          }
+        }, [
+          document.createTextNode('详情')
+        ]));
+      }
+
+      list.appendChild(item);
     });
   }
 

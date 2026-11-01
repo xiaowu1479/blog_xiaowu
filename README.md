@@ -154,6 +154,7 @@ Steamcommunity_302 的加速重新打开，或关掉它并清理 hosts 里的 `#
 - 关于弹窗：每行一条 `图标|颜色|文字`，如 `fa-regular fa-comment|#63e6be|相信未来皆有可能。`
 - 作品标签：用逗号分隔，如 `HTML,CSS,JS`
 - 作品图标：填 Font Awesome 类名（如 `fa-solid fa-image`），也可以上传，或直接填图片地址（`img/logo.svg` / `https://…`）
+- 作品详情：填了内容后卡片右侧会出现「详情」按钮；有外链的作品点卡片会跳外链，点「详情」按钮看详情
 - 图片字段：可以直接上传（jpg/png/gif/webp/svg，≤5MB），也可以手填 `img/xxx.jpg`
 
 ### 发文章：Markdown 编辑器 + 分类

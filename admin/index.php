@@ -48,7 +48,7 @@ function entity_defs(): array
         'works' => [
             'title' => '作品集',
             'icon' => 'fa-solid fa-code',
-            'hint' => '「链接」留空时，前台点击会弹出「详情」内容。图标可以填 Font Awesome 类名，也可以上传 / 填写图片地址。',
+            'hint' => '「详情」填了内容，卡片右侧会出现「详情」按钮；「链接」留空时点整张卡片也能打开详情。图标可以填 Font Awesome 类名，也可以上传 / 填写图片地址。',
             'fields' => [
                 ['title', '标题', 'text', true],
                 ['year', '年份', 'text', false, '例如 2026 或 —'],
