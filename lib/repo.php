@@ -375,6 +375,7 @@ function site_payload(): array
         'status' => setting_get('status'),
         'avatar' => setting_get('avatar', 'img/avatar.svg'),
         'avatarText' => setting_get('avatar_text', '悟'),
+        'favicon' => setting_get('favicon', DEFAULT_FAVICON) ?: DEFAULT_FAVICON,
         'music' => [
             'src' => setting_get('music_src', DEFAULT_MUSIC_SRC),
             'title' => setting_get('music_title', DEFAULT_MUSIC_TITLE),

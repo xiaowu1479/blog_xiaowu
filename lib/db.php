@@ -176,6 +176,7 @@ function db_seed(PDO $pdo): void
         'status' => 'iPhone 在线',
         'avatar' => 'img/avatar.svg',
         'avatar_text' => '悟',
+        'favicon' => 'img/favicon.svg',
 
         // 技能标签：每行 "标签|颜色"
         'skills' => "CSS|#f70808\nJava|#63e6be\nJS|#74C0FC\nAndroid|#ea875e",

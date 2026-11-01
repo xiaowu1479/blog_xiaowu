@@ -17,6 +17,7 @@ const SITE = {
   // 想用 QQ 头像接口可以填 'https://imgapi.cn/qq.php?qq=你的QQ'（依赖外部服务，可能失效）
   avatar: 'img/avatar.svg',
   avatarText: '悟',           // 头像加载失败时的兜底文字
+  favicon: 'img/favicon.svg', // 浏览器标签页图标（后台可换）
   skills: [
     { label: 'CSS', icon: 'fa-circle-check', color: '#f70808' },
     { label: 'Java', icon: 'fa-circle-check', color: '#63e6be' },
@@ -270,6 +271,33 @@ const SITE = {
       localStorage.setItem('zhs-name', SITE.name);
       localStorage.setItem('zhs-avatar', SITE.avatar);
     } catch (e) {}
+  }
+
+  /* ---------------- 标签页图标 ---------------- */
+  function renderFavicon() {
+    const href = (SITE.favicon || '').trim();
+    if (!href) return;
+
+    let link = document.getElementById('siteFavicon');
+    if (!link) {
+      link = document.createElement('link');
+      link.id = 'siteFavicon';
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+
+    // 能认出来的格式给个 type 提示，认不出来就不写，交给浏览器自己嗅探
+    const type = (/^data:image\/svg/i.test(href) || /\.svgz?(?:[?#]|$)/i.test(href)) ? 'image/svg+xml'
+      : (/^data:image\/(?:x-icon|vnd\.microsoft\.icon)/i.test(href) || /\.ico(?:[?#]|$)/i.test(href)) ? 'image/x-icon'
+        : (/^data:image\/png/i.test(href) || /\.png(?:[?#]|$)/i.test(href)) ? 'image/png'
+          : '';
+
+    if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+    if (type) {
+      if (link.getAttribute('type') !== type) link.setAttribute('type', type);
+    } else {
+      link.removeAttribute('type');
+    }
   }
 
   /* ---------------- 首页音乐 ---------------- */
@@ -954,6 +982,7 @@ const SITE = {
       所有 render 函数都先清空容器，所以可以重复执行而不产生重复内容。 */
   function mountPage() {
     renderIdentity();
+    renderFavicon();
     renderMusic();
     renderQuick();
     renderAbout();

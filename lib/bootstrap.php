@@ -25,6 +25,9 @@ define('DEFAULT_MUSIC_SRC', 'https://music.163.com/song/media/outer/url?id=20990
 define('DEFAULT_MUSIC_TITLE', '在你的身边');
 define('DEFAULT_MUSIC_COVER', 'img/zainideshenbian.jpg');
 
+// 浏览器标签页图标（后台没保存过时用自带的「悟」字图标）
+define('DEFAULT_FAVICON', 'img/favicon.svg');
+
 date_default_timezone_set('Asia/Shanghai');
 
 /* mbstring 缺失时降级为按字节处理——足以让安装页跑起来并提示去开启扩展，
@@ -588,10 +591,12 @@ function save_upload(string $field, string $subdir = 'img/uploads'): ?string
         'image/gif' => 'gif',
         'image/webp' => 'webp',
         'image/svg+xml' => 'svg',
+        'image/vnd.microsoft.icon' => 'ico',
+        'image/x-icon' => 'ico',
     ];
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime = (string)$finfo->file($f['tmp_name']);
-    if (!isset($allow[$mime])) err('只允许 jpg / png / gif / webp / svg，当前是 ' . h($mime));
+    if (!isset($allow[$mime])) err('只允许 jpg / png / gif / webp / svg / ico，当前是 ' . h($mime));
 
     $dir = APP_ROOT . '/' . trim($subdir, '/');
     if (!is_dir($dir) && !@mkdir($dir, 0755, true)) err('无法创建目录 ' . h($subdir));

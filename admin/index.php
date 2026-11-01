@@ -163,6 +163,7 @@ function login_view(): void
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>登录 · 后台</title>
+<?= favicon_link() ?>
 <link rel="stylesheet" href="../css/all.min.css">
 <link rel="stylesheet" href="../css/md.css?v=<?= (int)@filemtime(__DIR__ . '/../css/md.css') ?>">
 <link rel="stylesheet" href="assets/admin.css?v=<?= (int)@filemtime(__DIR__ . '/assets/admin.css') ?>">
@@ -186,6 +187,7 @@ function handle_settings(): void
 {
     $scalars = [
         'name' => 120, 'sign' => 200, 'status' => 120, 'avatar' => 300, 'avatar_text' => 4,
+        'favicon' => 300,
         'about_version' => 120, 'icp_text' => 120, 'icp_href' => 300, 'since' => 40, 'year' => 20,
         'music_src' => 500, 'music_title' => 120, 'music_cover' => 300,
     ];
@@ -202,8 +204,8 @@ function handle_settings(): void
 
     if ($values['name'] === '') err('站点名称不能为空');
 
-    // 头像 / 赞赏码 / 音乐封面可以直接传图（文件名和表单里的 file_<字段名> 对应）
-    foreach (['avatar', 'pay_wechat', 'pay_alipay', 'music_cover'] as $key) {
+    // 头像 / 标签页图标 / 赞赏码 / 音乐封面可以直接传图（文件名和表单里的 file_<字段名> 对应）
+    foreach (['avatar', 'favicon', 'pay_wechat', 'pay_alipay', 'music_cover'] as $key) {
         $path = save_upload('file_' . $key);
         if ($path !== null) $values[$key] = $path;
     }
@@ -318,13 +320,23 @@ function is_image_src(string $v): bool
 {
     if ($v === '') return false;
     return (bool) preg_match('~^(?:https?:)?//|^data:image/|^img/~i', $v)
-        || (bool) preg_match('~\.(?:svg|png|jpe?g|gif|webp|avif)(?:[?#]|$)~i', $v);
+        || (bool) preg_match('~\.(?:svg|png|jpe?g|gif|webp|avif|ico)(?:[?#]|$)~i', $v);
 }
 
 /** 后台预览图地址：站内相对路径补上 ../，外链 / data URI 原样输出 */
 function preview_src(string $v): string
 {
     return preg_match('~^(?:https?:)?//|^data:~i', $v) ? $v : '../' . ltrim($v, '/');
+}
+
+/** 标签页图标的 <link>：登录页和后台框架共用；按扩展名给出 MIME */
+function favicon_link(): string
+{
+    $v = trim((string) setting_get('favicon', DEFAULT_FAVICON));
+    if ($v === '') $v = DEFAULT_FAVICON;
+    $type = preg_match('~^data:image/svg|\.svgz?(?:[?#]|$)~i', $v) ? 'image/svg+xml'
+        : (preg_match('~^data:image/(?:x-icon|vnd\.microsoft\.icon)|\.ico(?:[?#]|$)~i', $v) ? 'image/x-icon' : 'image/png');
+    return '<link rel="icon" href="' . h(preview_src($v)) . '" type="' . $type . '">';
 }
 
 function render_field(array $f, array $row): string
@@ -523,6 +535,7 @@ function render_settings(): void
     $s = settings_all();
     // 老库没有音乐字段时，表单里先显示内置默认值；保存一次就会写进库
     $s += [
+        'favicon' => setting_get('favicon', DEFAULT_FAVICON),
         'music_src' => setting_get('music_src', DEFAULT_MUSIC_SRC),
         'music_title' => setting_get('music_title', DEFAULT_MUSIC_TITLE),
         'music_cover' => setting_get('music_cover', DEFAULT_MUSIC_COVER),
@@ -541,6 +554,7 @@ function render_settings(): void
             echo render_field(['status', '在线状态', 'text', false, '例如 iPhone 在线'], $s);
             echo render_field(['avatar', '头像', 'upload', false, '留空保持原样；上传新图会自动替换'], $s);
             echo render_field(['avatar_text', '头像兜底文字', 'text', false, '头像加载失败时显示的单个字'], $s);
+            echo render_field(['favicon', '标签页图标', 'upload', false, '浏览器标签页上的小图标；支持 png / svg / ico，留空保持原样'], $s);
             ?>
           </section>
 
@@ -697,6 +711,7 @@ function layout(string $title, string $content, string $active): void
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= h($title) ?> · 后台</title>
+<?= favicon_link() ?>
 <link rel="stylesheet" href="../css/all.min.css">
 <link rel="stylesheet" href="../css/md.css?v=<?= (int)@filemtime(__DIR__ . '/../css/md.css') ?>">
 <link rel="stylesheet" href="assets/admin.css?v=<?= (int)@filemtime(__DIR__ . '/assets/admin.css') ?>">
