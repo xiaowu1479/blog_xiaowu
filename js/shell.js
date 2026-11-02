@@ -167,7 +167,7 @@
       <div class="sb-foot">
         <div class="sb-bottom">
           <div class="sb-bottom__left">
-            <div class="mode-switch" title="切换深浅色">
+            <div class="mode-switch" title="切换深浅色（19:00–07:00 自动深色）">
               <div class="mode-switch__toggle">
                 <div class="mode-switch__circle"></div>
               </div>

@@ -732,35 +732,41 @@ const SITE = {
     runtimeTimer = window.setInterval(tick, 1000);
   }
 
-  /* ---------------- 深浅色：记住选择 ---------------- */
+  /* ---------------- 深浅色：按时间自动 + 手动临时覆盖 ----------------
+     dark.js 负责真正的判定和切换（19:00–07:00 自动深色），
+     这里只同步开关的 aria 状态和键盘操作，避免两个脚本各存一套状态。 */
   function initTheme() {
-    const KEY = 'zhanshiye-theme';
-    let saved = null;
-    try { saved = localStorage.getItem(KEY); } catch (e) { /* 隐私模式忽略 */ }
-
-    if (saved === 'dark') document.body.classList.add('dark-mode');
-    else if (saved === 'light') document.body.classList.remove('dark-mode');
-
     const toggle = $('.mode-switch__toggle');
     if (!toggle) return;
+
+    const theme = window.ZhsTheme || null;
     toggle.setAttribute('role', 'switch');
     toggle.setAttribute('tabindex', '0');
-    toggle.setAttribute('aria-label', '切换深浅色');
 
     const sync = () => {
       const dark = document.body.classList.contains('dark-mode');
       toggle.setAttribute('aria-checked', dark ? 'true' : 'false');
-      try { localStorage.setItem(KEY, dark ? 'dark' : 'light'); } catch (e) {}
+      toggle.setAttribute('aria-label', dark ? '切换到浅色' : '切换到深色');
+      if (theme) {
+        toggle.title = '切换深浅色（' + theme.DARK_FROM + ':00–' + theme.DARK_TO + ':00 自动切换）';
+      }
     };
     sync();
+    window.addEventListener('zhs:themechange', sync);
 
-    // dark.js 已在点击时切换类名，这里只做状态同步（用捕获阶段保证顺序）
+    // dark.js 的点击监听先注册，类名已经切好，这里只补一次状态同步
     toggle.addEventListener('click', () => setTimeout(sync, 0));
     toggle.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        document.body.classList.toggle('dark-mode');
-        sync();
+        if (window.ZhsTheme) {
+          window.ZhsTheme.toggle();
+        } else {
+          document.body.classList.toggle('dark-mode');
+          try {
+            window.dispatchEvent(new CustomEvent('zhs:themechange', { detail: {} }));
+          } catch (err) { /* 老浏览器忽略 */ }
+        }
       }
     });
   }
