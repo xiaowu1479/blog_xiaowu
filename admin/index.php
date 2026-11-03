@@ -871,7 +871,7 @@ function layout(string $title, string $content, string $active): void
 <link rel="stylesheet" href="assets/admin.css?v=<?= (int)@filemtime(__DIR__ . '/assets/admin.css') ?>">
 </head>
 <body>
-<aside class="side">
+<aside class="side" id="adminSide">
   <div class="side-head">
     <img src="../img/avatar.svg" alt="">
     <div><b>小悟大人</b><span>内容管理</span></div>
@@ -890,15 +890,42 @@ function layout(string $title, string $content, string $active): void
     </form>
   </div>
 </aside>
+<div class="nav-backdrop" id="navBackdrop"></div>
 
 <main class="main">
   <header class="top">
+    <button type="button" class="nav-toggle" id="navToggle" aria-label="打开菜单" aria-controls="adminSide" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
     <h1><?= h($title) ?></h1>
   </header>
   <?php if ($msg): ?><div class="flash <?= h($msg['t']) ?>"><?= h($msg['m']) ?></div><?php endif; ?>
   <?= $content ?>
 </main>
 <script src="assets/media.js?v=<?= (int)@filemtime(__DIR__ . '/assets/media.js') ?>"></script>
+<script>
+/* 手机端抽屉：左上角按钮开关，点遮罩 / 按 Esc / 点菜单项都会关掉 */
+(function () {
+  var side = document.getElementById('adminSide');
+  var btn = document.getElementById('navToggle');
+  var bg = document.getElementById('navBackdrop');
+  if (!side || !btn || !bg) return;
+
+  function open(on) {
+    document.body.classList.toggle('nav-open', on);
+    btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+  }
+
+  btn.addEventListener('click', function () {
+    open(!document.body.classList.contains('nav-open'));
+  });
+  bg.addEventListener('click', function () { open(false); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') open(false);
+  });
+  side.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && e.target.closest('a')) open(false);
+  });
+})();
+</script>
 <?php if ($active === 'posts'): ?>
 <script src="../js/markdown.js?v=<?= filemtime(__DIR__ . '/../js/markdown.js') ?>"></script>
 <script src="assets/editor.js?v=<?= filemtime(__DIR__ . '/assets/editor.js') ?>"></script>
