@@ -11,6 +11,7 @@ function table_columns(): array
 {
     return [
         'friends' => ['name', 'desc', 'href', 'sort', 'visible'],
+        'friend_applies' => ['name', 'desc', 'href', 'contact', 'status', 'friend_id', 'ip', 'created_at', 'reviewed_at'],
         'works' => ['title', 'year', 'icon', 'desc', 'tags', 'href', 'detail', 'sort', 'visible'],
         'posts' => ['date', 'title', 'excerpt', 'content', 'href', 'sort', 'cat_id', 'visible'],
         'categories' => ['name', 'desc', 'sort', 'visible'],
@@ -293,6 +294,106 @@ function post_neighbors(int $id): array
         }
     }
     return ['prev' => null, 'next' => null];
+}
+
+/* ---------------- 友链申请 ----------------
+   前台只写 friend_applies；后台点「通过」时才写 friends，
+   所以审核前不会有任何申请出现在前台。 */
+
+/** 各状态数量：pending / approved / rejected / all */
+function friend_apply_counts(): array
+{
+    $out = ['pending' => 0, 'approved' => 0, 'rejected' => 0, 'all' => 0];
+    foreach (db()->query('SELECT status, COUNT(*) AS c FROM friend_applies GROUP BY status') as $r) {
+        $s = (string)$r['status'];
+        if (isset($out[$s])) $out[$s] = (int)$r['c'];
+    }
+    $out['all'] = $out['pending'] + $out['approved'] + $out['rejected'];
+    return $out;
+}
+
+function friend_apply_pending_count(): int
+{
+    return (int)db()->query("SELECT COUNT(*) FROM friend_applies WHERE status = 'pending'")->fetchColumn();
+}
+
+/** $status: pending / approved / rejected / all */
+function friend_applies_list(string $status = 'pending'): array
+{
+    if ($status === '' || $status === 'all') {
+        return db()->query("SELECT * FROM friend_applies
+            ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END, id DESC")->fetchAll();
+    }
+    $st = db()->prepare('SELECT * FROM friend_applies WHERE status = ? ORDER BY id DESC');
+    $st->execute([$status]);
+    return $st->fetchAll();
+}
+
+/** 某个 IP 在最近 $seconds 秒里提交了几条（防刷用） */
+function friend_apply_recent_count(string $ip, int $seconds): int
+{
+    $st = db()->prepare('SELECT COUNT(*) FROM friend_applies WHERE ip = ? AND created_at >= ?');
+    $st->execute([$ip, date('Y-m-d H:i:s', time() - $seconds)]);
+    return (int)$st->fetchColumn();
+}
+
+function friend_apply_create(array $data): int
+{
+    return row_save('friend_applies', [
+        'name' => (string)($data['name'] ?? ''),
+        'desc' => (string)($data['desc'] ?? ''),
+        'href' => (string)($data['href'] ?? ''),
+        'contact' => (string)($data['contact'] ?? ''),
+        'status' => 'pending',
+        'ip' => (string)($data['ip'] ?? ''),
+        'created_at' => date('Y-m-d H:i:s'),
+    ]);
+}
+
+/**
+ * 通过申请：写进 friends 并标记 approved。
+ * 返回 ok（新加）/ duplicate（友链里已有同链接，只标记）/ missing（没这条）/ handled（已处理过）。
+ */
+function friend_apply_approve(int $id): string
+{
+    return tx(function () use ($id): string {
+        $app = row_one('friend_applies', $id);
+        if (!$app) return 'missing';
+        if ((string)$app['status'] !== 'pending') return 'handled';
+
+        $href = (string)$app['href'];
+        $st = db()->prepare('SELECT id FROM friends WHERE href = ? LIMIT 1');
+        $st->execute([$href]);
+        $existing = $st->fetchColumn();
+        $duplicate = $existing !== false && $existing !== null;
+
+        if ($duplicate) {
+            $friendId = (int)$existing;
+        } else {
+            $friendId = row_save('friends', [
+                'name' => (string)$app['name'],
+                'desc' => (string)$app['desc'],
+                'href' => $href,
+                'sort' => next_sort('friends'),
+                'visible' => 1,
+            ]);
+        }
+
+        db()->prepare("UPDATE friend_applies SET status = 'approved', friend_id = ?, reviewed_at = ? WHERE id = ?")
+            ->execute([$friendId, date('Y-m-d H:i:s'), $id]);
+
+        return $duplicate ? 'duplicate' : 'ok';
+    });
+}
+
+/** 拒绝 / 重新放回待审核；只允许 pending → rejected、rejected → pending */
+function friend_apply_set_status(int $id, string $status): bool
+{
+    if (!in_array($status, ['pending', 'rejected'], true)) return false;
+    $from = $status === 'pending' ? 'rejected' : 'pending';
+    $st = db()->prepare('UPDATE friend_applies SET status = ?, reviewed_at = ? WHERE id = ? AND status = ?');
+    $st->execute([$status, date('Y-m-d H:i:s'), $id, $from]);
+    return $st->rowCount() > 0;
 }
 
 function site_payload(): array

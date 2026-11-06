@@ -82,6 +82,22 @@ code { font-size: 12.5px; background: rgba(127, 127, 127, .14); padding: 1px 5px
 }
 .side nav a.on i { color: #fff; }
 
+/* 待审核数量：小红点，不占菜单文字的位置 */
+.side nav a .nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--a-danger);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 18px;
+  text-align: center;
+}
+.side nav a.on .nav-badge { background: rgba(255, 255, 255, .26); }
+
 .side-foot { border-top: 1px solid var(--a-line); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .side-foot a, .side-foot button {
   display: flex;
@@ -306,6 +322,28 @@ textarea { resize: vertical; line-height: 1.6; font-family: ui-monospace, Menlo,
 }
 
 /* ---------- 列表 ---------- */
+/* 友链申请的筛选标签 */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--a-line);
+  border-radius: 999px;
+  color: var(--a-muted);
+  font-size: 12px;
+}
+.tabs a:hover { color: var(--a-text); text-decoration: none; }
+.tabs a.on { background: var(--a-accent); border-color: var(--a-accent); color: #fff; }
+.tabs a b { font-size: 11px; font-weight: 600; opacity: .85; }
+
+/* 申请状态 */
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; }
+.pill.pending { background: rgba(240, 163, 94, .16); color: #b87327; }
+.pill.approved { background: rgba(67, 198, 160, .16); color: #218a67; }
+.pill.rejected { background: rgba(225, 91, 100, .13); color: var(--a-danger); }
+
 /* fixed 布局：单元格是 nowrap，auto 布局下浏览器没法把列压到文字宽度以下，
    posts 那种「日期+标题+摘要」的表就会撑出卡片。定宽后各列按 colgroup 分配，
    多的用省略号截断，窄屏由 .list-wrap 横向滚动兜底。 */

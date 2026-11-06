@@ -81,6 +81,23 @@ function db_install(PDO $pdo, bool $fresh): void
         visible INTEGER NOT NULL DEFAULT 1
     )');
 
+    // 前台「申请友链」先落这张表，后台审核通过后再写进 friends。
+    // 不直接写 friends 是为了：申请可以带联系方式和 IP，审核前不能出现在前台。
+    $pdo->exec('CREATE TABLE IF NOT EXISTS friend_applies (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL DEFAULT \'\',
+        desc        TEXT NOT NULL DEFAULT \'\',
+        href        TEXT NOT NULL DEFAULT \'\',
+        contact     TEXT NOT NULL DEFAULT \'\',
+        status      TEXT NOT NULL DEFAULT \'pending\',
+        friend_id   INTEGER NOT NULL DEFAULT 0,
+        ip          TEXT NOT NULL DEFAULT \'\',
+        created_at  TEXT NOT NULL DEFAULT \'\',
+        reviewed_at TEXT NOT NULL DEFAULT \'\'
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_friend_applies_status ON friend_applies(status, id)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_friend_applies_ip ON friend_applies(ip, created_at)');
+
     $pdo->exec('CREATE TABLE IF NOT EXISTS works (
         id     INTEGER PRIMARY KEY AUTOINCREMENT,
         title  TEXT NOT NULL DEFAULT \'\',

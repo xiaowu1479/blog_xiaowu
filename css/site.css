@@ -1057,6 +1057,158 @@ a.friend:hover {
   text-overflow: ellipsis;
 }
 
+/* 友链页底部的申请入口 */
+.friend-apply-cta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--ui-line);
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: var(--ui-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease, color .2s ease;
+}
+
+.friend-apply-cta:hover,
+.friend-apply-cta:focus-visible {
+  border-color: var(--ui-accent);
+  background: var(--ui-hover);
+  color: var(--ui-accent);
+  outline: none;
+}
+
+.friend-apply-cta > i {
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+
+.friend-apply-cta b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.friend-apply-cta:hover b {
+  color: var(--ui-accent);
+}
+
+.friend-apply-cta small {
+  display: block;
+  margin-top: 1px;
+  font-size: 10.5px;
+  color: var(--ui-muted);
+}
+
+/* 申请表单 */
+.friend-apply {
+  display: grid;
+  gap: 10px;
+}
+
+.friend-apply__field {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.friend-apply__field > span {
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.friend-apply__field > span i {
+  font-style: normal;
+  color: #f08a8a;
+}
+
+.friend-apply__field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-card-2);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.friend-apply__field input:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px rgba(116, 158, 252, .2);
+}
+
+.friend-apply__field input::placeholder {
+  color: var(--ui-muted);
+  opacity: .75;
+}
+
+/* 蜜罐：不能用 display:none（部分机器人会跳过隐藏元素），移出可视区更稳妥 */
+.friend-apply__hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.friend-apply__msg {
+  min-height: 18px;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.friend-apply__msg.is-ok {
+  color: #2f9e6f;
+}
+
+.friend-apply__msg.is-err {
+  color: #e15b64;
+}
+
+.friend-apply__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.friend-apply__submit {
+  padding: 8px 20px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--ui-accent), var(--ui-accent-2));
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.friend-apply__submit:hover {
+  filter: brightness(1.05);
+}
+
+.friend-apply__submit:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.friend-apply__tip {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--ui-muted);
+}
+
 .is-off {
   cursor: not-allowed;
   opacity: .5;

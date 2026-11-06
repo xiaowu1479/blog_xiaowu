@@ -1022,5 +1022,5 @@ const SITE = {
   });
 
   // 给 router.js 用：ready 保证首屏数据已就绪；refresh 让菜单切换也能拿到最新内容
-  window.ZhsSite = { ready, refresh: hydrate, mount: mountPage };
+  window.ZhsSite = { ready, refresh: hydrate, mount: mountPage, csrf: () => SITE.csrf || '' };
 })();

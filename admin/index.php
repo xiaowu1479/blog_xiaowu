@@ -3,7 +3,7 @@
  * admin/index.php —— 后台（单入口）
  *
  * 路由：index.php?p=<页面>&do=<动作>
- *   p=login | dashboard | settings | friends | works | posts | photos | media | contacts | password
+ *   p=login | dashboard | settings | friends | friend_applies | works | posts | photos | media | contacts | password
  * 所有写操作一律 POST + CSRF 校验，成功后 302 回列表（PRG，避免刷新重复提交）。
  */
 declare(strict_types=1);
@@ -35,7 +35,7 @@ function entity_defs(): array
         'friends' => [
             'title' => '友链',
             'icon' => 'fa-solid fa-link',
-            'hint' => '留在前台显示的顺序由「排序」决定，数字小的在前。',
+            'hint' => '留在前台显示的顺序由「排序」决定，数字小的在前。前台友链页底部的「申请友链」提交后会进入左侧「友链申请」，审核通过才出现在这里。',
             'fields' => [
                 ['name', '名称', 'text', true],
                 ['desc', '一句话描述', 'text', false, '例如「前端文档」'],
@@ -313,6 +313,43 @@ function handle_entity(string $table): void
     row_save($table, $data, $id ?: null);
     flash($id ? '已更新' : '已添加');
     go('index.php?p=' . $table);
+}
+
+/* ============================ 友链申请 ============================ */
+function handle_friend_apply(): void
+{
+    $do = get_str('do');
+    $id = get_int('id');
+    if (!$id) err('缺少 id');
+
+    if ($do === 'approve') {
+        $r = friend_apply_approve($id);
+        if ($r === 'missing') flash('这条申请不存在', 'err');
+        elseif ($r === 'handled') flash('这条申请已经处理过了', 'err');
+        elseif ($r === 'duplicate') flash('已通过：友链里已有相同链接，没有重复添加');
+        else flash('已通过，友链已添加并显示在前台');
+        go('index.php?p=friend_applies');
+    }
+
+    if ($do === 'reject') {
+        if (!friend_apply_set_status($id, 'rejected')) flash('这条申请已经处理过了', 'err');
+        else flash('已拒绝；记录还在，可以以后放回待审核');
+        go('index.php?p=friend_applies');
+    }
+
+    if ($do === 'pending') {
+        if (!friend_apply_set_status($id, 'pending')) flash('只有「已拒绝」的申请能放回待审核', 'err');
+        else flash('已放回待审核');
+        go('index.php?p=friend_applies');
+    }
+
+    if ($do === 'delete') {
+        row_delete('friend_applies', $id);
+        flash('已删除申请记录（已通过的友链不受影响）');
+        go('index.php?p=friend_applies');
+    }
+
+    err('未知操作');
 }
 
 /* ============================ 媒体库 ============================ */
@@ -675,6 +712,104 @@ function render_entity(string $table, array $def): void
     layout($def['title'], $content, $table);
 }
 
+/* ============================ 友链申请审核 ============================ */
+function render_friend_applies(): void
+{
+    $filter = get_str('status', 'pending');
+    if (!in_array($filter, ['pending', 'approved', 'rejected', 'all'], true)) $filter = 'pending';
+
+    $counts = friend_apply_counts();
+    $items = friend_applies_list($filter);
+    $labels = ['pending' => '待审核', 'approved' => '已通过', 'rejected' => '已拒绝'];
+    $tabs = ['pending' => '待审核', 'approved' => '已通过', 'rejected' => '已拒绝', 'all' => '全部'];
+
+    ob_start();
+    ?>
+    <section class="card">
+      <h2>友链申请</h2>
+      <p class="hint">
+        前台「友链」页提交的申请会先到这里。点「通过」会把它写进友链并设为前台显示；
+        「拒绝」只是标记，不删记录，以后还能放回待审核。
+      </p>
+
+      <div class="tabs">
+        <?php foreach ($tabs as $key => $label): ?>
+          <a class="<?= $filter === $key ? 'on' : '' ?>" href="index.php?p=friend_applies&status=<?= h($key) ?>">
+            <?= h($label) ?><b><?= (int)$counts[$key] ?></b>
+          </a>
+        <?php endforeach; ?>
+      </div>
+
+      <?php if (!$items): ?>
+        <p class="empty">
+          <?= $filter === 'pending'
+              ? '暂无待审核申请。前台友链页点「申请友链」提交后会出现在这里。'
+              : '这个分类下还没有记录。' ?>
+        </p>
+      <?php else: ?>
+      <div class="list-wrap">
+        <table class="list">
+          <colgroup>
+            <col style="width:44px">
+            <col style="width:120px">
+            <col style="width:190px">
+            <col style="width:160px">
+            <col style="width:130px">
+            <col style="width:76px">
+            <col style="width:128px">
+            <col style="width:112px">
+          </colgroup>
+          <thead><tr>
+            <th>#</th><th>名称</th><th>链接</th><th>介绍</th>
+            <th>联系方式</th><th>状态</th><th>提交时间</th><th>操作</th>
+          </tr></thead>
+          <tbody>
+          <?php foreach ($items as $it): ?>
+            <?php $status = (string)$it['status']; ?>
+            <tr>
+              <td><?= (int)$it['id'] ?></td>
+              <td title="<?= h((string)$it['name']) ?>"><?= h(mb_strimwidth((string)$it['name'], 0, 18, '…')) ?></td>
+              <td title="<?= h((string)$it['href']) ?>">
+                <a href="<?= h((string)$it['href']) ?>" target="_blank" rel="noopener nofollow">
+                  <?= h(mb_strimwidth((string)$it['href'], 0, 30, '…')) ?>
+                </a>
+              </td>
+              <td title="<?= h((string)$it['desc']) ?>"><?= h(mb_strimwidth((string)$it['desc'], 0, 22, '…')) ?></td>
+              <td title="<?= h((string)$it['contact']) ?>"><?= h(mb_strimwidth((string)$it['contact'], 0, 18, '…')) ?></td>
+              <td><span class="pill <?= h($status) ?>"><?= h($labels[$status] ?? $status) ?></span></td>
+              <td><?= h((string)$it['created_at']) ?></td>
+              <td class="ops">
+                <?php if ($status === 'pending'): ?>
+                  <form method="post" action="index.php?p=friend_applies&do=approve&id=<?= (int)$it['id'] ?>">
+                    <?= csrf_field() ?><button type="submit" title="通过并加进友链"><i class="fa-solid fa-check"></i></button>
+                  </form>
+                  <form method="post" action="index.php?p=friend_applies&do=reject&id=<?= (int)$it['id'] ?>">
+                    <?= csrf_field() ?><button type="submit" title="拒绝"><i class="fa-solid fa-xmark"></i></button>
+                  </form>
+                <?php elseif ($status === 'rejected'): ?>
+                  <form method="post" action="index.php?p=friend_applies&do=pending&id=<?= (int)$it['id'] ?>">
+                    <?= csrf_field() ?><button type="submit" title="放回待审核"><i class="fa-solid fa-rotate-left"></i></button>
+                  </form>
+                <?php elseif ((int)$it['friend_id'] > 0): ?>
+                  <a href="index.php?p=friends&edit=<?= (int)$it['friend_id'] ?>" title="查看对应的友链">
+                    <i class="fa-solid fa-eye"></i></a>
+                <?php endif; ?>
+                <form method="post" action="index.php?p=friend_applies&do=delete&id=<?= (int)$it['id'] ?>"
+                      onsubmit="return confirm('确定删除这条申请记录吗？已通过的友链不会被删除。')">
+                  <?= csrf_field() ?><button type="submit" class="danger" title="删除记录"><i class="fa-solid fa-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+      <?php endif; ?>
+    </section>
+    <?php
+    layout('友链申请', (string)ob_get_clean(), 'friend_applies');
+}
+
 function render_settings(): void
 {
     $s = settings_all();
@@ -806,6 +941,7 @@ function render_dashboard(): void
     $weakPwd = password_verify('admin123', setting_get('admin_hash'));
     $size = is_file(db_file()) ? filesize(db_file()) : 0;
     $mediaCount = count(media_list('', false));   // 媒体库不在实体表里，单独统计
+    $pendingApplies = friend_apply_pending_count();
 
     ob_start();
     ?>
@@ -826,6 +962,11 @@ function render_dashboard(): void
         <i class="fa-solid fa-photo-film"></i>
         <b><?= (int)$mediaCount ?></b>
         <span>媒体库</span>
+      </a>
+      <a class="stat" href="index.php?p=friend_applies">
+        <i class="fa-solid fa-inbox"></i>
+        <b><?= (int)$pendingApplies ?></b>
+        <span>友链申请<?= $pendingApplies ? '（待审核）' : '' ?></span>
       </a>
     </div>
 
@@ -849,6 +990,7 @@ function layout(string $title, string $content, string $active): void
         'dashboard' => ['概览', 'fa-solid fa-gauge-high'],
         'settings' => ['站点信息', 'fa-solid fa-sliders'],
         'friends' => ['友链', 'fa-solid fa-link'],
+        'friend_applies' => ['友链申请', 'fa-solid fa-inbox'],
         'works' => ['作品集', 'fa-solid fa-code'],
         'posts' => ['博客', 'fa-solid fa-pen-nib'],
         'categories' => ['分类', 'fa-solid fa-folder-tree'],
@@ -858,6 +1000,7 @@ function layout(string $title, string $content, string $active): void
         'update' => ['系统更新', 'fa-solid fa-cloud-arrow-down'],
         'password' => ['修改密码', 'fa-solid fa-key'],
     ];
+    $pendingBadge = friend_apply_pending_count();
     $msg = flash_take();
     ?><!DOCTYPE html>
 <html lang="zh-CN">
@@ -880,6 +1023,9 @@ function layout(string $title, string $content, string $active): void
     <?php foreach ($nav as $p => [$label, $icon]): ?>
       <a href="index.php?p=<?= h($p) ?>" class="<?= $p === $active ? 'on' : '' ?>">
         <i class="<?= h($icon) ?>"></i><span><?= h($label) ?></span>
+        <?php if ($p === 'friend_applies' && $pendingBadge > 0): ?>
+          <em class="nav-badge"><?= (int)$pendingBadge ?></em>
+        <?php endif; ?>
       </a>
     <?php endforeach; ?>
   </nav>
@@ -960,6 +1106,7 @@ if (is_post()) {
     csrf_check();
     if ($p === 'settings') handle_settings();
     elseif ($p === 'media') handle_media();
+    elseif ($p === 'friend_applies') handle_friend_apply();
     elseif ($p === 'password') handle_password();
     elseif ($p === 'update') handle_update_action();
     elseif (array_key_exists($p, entity_defs())) handle_entity($p);
@@ -969,6 +1116,7 @@ if (is_post()) {
 switch ($p) {
     case 'settings': render_settings(); break;
     case 'media': render_media(); break;
+    case 'friend_applies': render_friend_applies(); break;
     case 'password': render_password(); break;
     case 'update': render_update(); break;
     case 'dashboard': render_dashboard(); break;

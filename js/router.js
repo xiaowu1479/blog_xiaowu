@@ -24,7 +24,8 @@
   var SCRIPTS = {
     'index.html': ['js/player.js'],
     'blog.html': ['js/blog.js'],
-    'post.html': ['js/markdown.js']
+    'post.html': ['js/markdown.js'],
+    'links.html': ['js/friend-apply.js']
   };
   var STYLES = {
     'blog.html': ['css/blog.css'],
