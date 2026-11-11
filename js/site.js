@@ -942,14 +942,17 @@ const SITE = {
     }, 500);
   }
 
-  /* ---------------- 模板遗留的樱花按钮 ----------------
-     原模板的 switchSakura() 依赖一个没被打包的脚本，点了会 ReferenceError，
-     这里给个明确反馈，顺便留个接入点。 */
+  /* ---------------- 樱花按钮 ----------------
+     实际特效在 js/sakura.js；脚本没加载时退回提示，不至于点了没反应。 */
   window.switchSakura = function () {
+    if (window.ZhsSakura) {
+      window.ZhsSakura.toggle();
+      return;
+    }
     const toast = $('#welcomeToast');
     if (!toast || !window.jQuery) return;
     const body = toast.querySelector('.toast-body');
-    if (body) body.textContent = '樱花特效还没接入，可以自己塞一个落樱脚本 🌸';
+    if (body) body.textContent = '樱花特效加载失败，请刷新页面再试 🌸';
     window.jQuery(toast).toast({ delay: 2000 }).toast('show');
   };
 

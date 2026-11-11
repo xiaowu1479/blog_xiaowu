@@ -22,7 +22,7 @@
 
   // 目标页额外需要的脚本 / 样式（公共的 jquery / shell / site 等首屏已经加载）
   var SCRIPTS = {
-    'index.html': ['js/player.js'],
+    'index.html': ['js/player.js', 'js/sakura.js'],
     'blog.html': ['js/blog.js'],
     'post.html': ['js/markdown.js'],
     'links.html': ['js/friend-apply.js']

@@ -710,6 +710,34 @@ body.nav-open .nav-backdrop {
   height: 20px;
 }
 
+/* 樱花开关：默认显示「关」的图标，body.sakura-on 时换成花朵 */
+.hero-bar .tool-pop .sakura-toggle .sakura-off {
+  color: rgba(240, 138, 175, .55);
+}
+
+.hero-bar .tool-pop .sakura-toggle .sakura-on {
+  display: none;
+  color: #f08aaf;
+}
+
+body.sakura-on .hero-bar .tool-pop .sakura-toggle .sakura-off {
+  display: none;
+}
+
+body.sakura-on .hero-bar .tool-pop .sakura-toggle .sakura-on {
+  display: inline-block;
+}
+
+/* 樱花画布：铺满窗口但不接收点击，花瓣可以落在弹窗和内容上面 */
+#canvas_sakura {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+}
+
 /* ---------- 8. 板块通用 ---------- */
 .sec {
   /* 移动端顶栏是 fixed 且高 56px，锚点跳转要留出这段 + 12px 呼吸位，

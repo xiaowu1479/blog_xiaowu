@@ -170,8 +170,10 @@
             <div class="card card-body tool-pop">
               <button type="button" class="btn btn-link" data-toggle="modal" data-target="#siteModal"
                 title="旗下站点"><img src="img/globe.svg" alt="旗下站点"></button>
-              <button onclick="switchSakura()" class="btn btn-link" title="樱花飘落（模板预留）">
-                <i class="fa-regular fa-circle-xmark fa-lg" style="color:pink;"></i>
+              <button type="button" onclick="switchSakura()" class="btn btn-link sakura-toggle"
+                title="樱花飘落（点击开关）" aria-label="樱花飘落特效开关">
+                <i class="fa-regular fa-circle-xmark fa-lg sakura-off" aria-hidden="true"></i>
+                <i class="fa-solid fa-spa fa-lg sakura-on" aria-hidden="true"></i>
               </button>
               <button type="button" class="btn btn-link" data-toggle="modal" data-target="#aboutModal"
                 title="关于"><img src="img/information.svg" alt="关于"></button>
@@ -333,6 +335,7 @@
   <script src="js/jquery-3.5.1.min.js"></script>
   <script src="js/bootstrap.min.js"></script>
   <script src="js/player.js"></script>
+  <script src="js/sakura.js"></script>
   <script src="js/site.js"></script>
   <script src="js/router.js"></script>
 </body>

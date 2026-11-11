@@ -44,6 +44,7 @@ zhanshiye/
 │
 ├── css/  js/  img/  fonts/ 资源与前台逻辑（js/site.js 里是内容兜底数据）
 │                            js/shell.js：五个子页面共用的侧栏 + 弹窗
+│                            js/sakura.js + img/sakura-petal.png：首页樱花飘落特效
 │                            css/blog.css + js/blog.js 只在博客两个页面加载
 ├── _backup/index.v1.html   改造前的原始首页
 └── _preview/              审计 / 截图 / 测试脚本 + 产物
@@ -447,6 +448,15 @@ document.documentElement.dataset.content   // 'api' 或 'fallback'
 另外，侧栏菜单、**从列表点进文章**、文章页的「全部文章」和「上一篇 / 下一篇」
 都不整页重载，由 `js/router.js` 只替换 `main.main`，侧栏、弹窗、播放器原地不动
 （实测换页前后 `#sidebar` 是同一个 DOM 节点）。该整页跳的（带 `?page=` 的分页、外链）照旧整页加载。
+
+### 樱花飘落特效
+
+首页「更多工具」里的花朵按钮开关 `js/sakura.js`。花瓣画在铺满窗口的 `#canvas_sakura` 上，
+`pointer-events:none` 不会挡住点击；默认开启，开关状态记在 `localStorage` 的 `zhs-sakura`（`on` / `off`）。
+系统开启「减少动态效果」时不会自动播放，点按钮仍可手动开启。
+
+想换花瓣就替换 `img/sakura-petal.png`；想改成默认关闭，把 `js/sakura.js` 里 `init()` 的
+`preference() !== 'off'` 改成 `preference() === 'on'` 即可。
 
 ## 四、安全这块做了什么
 
