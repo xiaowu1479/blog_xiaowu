@@ -685,6 +685,26 @@ const SITE = {
     window.jQuery(modal).modal('show');
   }
 
+  function friendAvatar(f, i) {
+    const ava = make('div', { class: 'friend-ava qk-' + (i % 6) });
+    const fallback = () => {
+      ava.classList.remove('has-logo');
+      ava.textContent = (f.name || '?').slice(0, 1);
+    };
+    if (f.logo) {
+      ava.classList.add('has-logo');
+      ava.appendChild(make('img', {
+        src: f.logo,
+        alt: '',
+        loading: 'lazy',
+        onerror: fallback          // 图挂了就退回首字，不留白框
+      }));
+    } else {
+      fallback();
+    }
+    return ava;
+  }
+
   /* ---------------- 友链 ---------------- */
   function renderFriends() {
     const box = $('#friendList');
@@ -695,7 +715,7 @@ const SITE = {
 
     SITE.friends.forEach((f, i) => {
       box.appendChild(linkOrBlock(f.href, 'friend', [
-        make('div', { class: 'friend-ava qk-' + (i % 6), text: f.name.slice(0, 1) }),
+        friendAvatar(f, i),
         make('div', { class: 'friend-body' }, [
           make('div', { class: 'friend-name', text: f.name }),
           make('div', { class: 'friend-desc', text: f.desc || '' })

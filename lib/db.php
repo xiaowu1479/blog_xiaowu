@@ -77,6 +77,7 @@ function db_install(PDO $pdo, bool $fresh): void
         name   TEXT NOT NULL DEFAULT \'\',
         desc   TEXT NOT NULL DEFAULT \'\',
         href   TEXT NOT NULL DEFAULT \'\',
+        logo   TEXT NOT NULL DEFAULT \'\',
         sort   INTEGER NOT NULL DEFAULT 0,
         visible INTEGER NOT NULL DEFAULT 1
     )');
@@ -88,6 +89,7 @@ function db_install(PDO $pdo, bool $fresh): void
         name        TEXT NOT NULL DEFAULT \'\',
         desc        TEXT NOT NULL DEFAULT \'\',
         href        TEXT NOT NULL DEFAULT \'\',
+        logo        TEXT NOT NULL DEFAULT \'\',
         contact     TEXT NOT NULL DEFAULT \'\',
         status      TEXT NOT NULL DEFAULT \'pending\',
         friend_id   INTEGER NOT NULL DEFAULT 0,
@@ -161,6 +163,18 @@ function db_install(PDO $pdo, bool $fresh): void
     foreach ($pdo->query('PRAGMA table_info(posts)') as $c) $postCols[] = (string)$c['name'];
     if (!in_array('cat_id', $postCols, true)) {
         $pdo->exec('ALTER TABLE posts ADD COLUMN cat_id INTEGER NOT NULL DEFAULT 0');
+    }
+
+    // 友链 Logo 是后加的：老库同样补列，避免已上线的站点升级后写不进去
+    $friendCols = [];
+    foreach ($pdo->query('PRAGMA table_info(friends)') as $c) $friendCols[] = (string)$c['name'];
+    if (!in_array('logo', $friendCols, true)) {
+        $pdo->exec("ALTER TABLE friends ADD COLUMN logo TEXT NOT NULL DEFAULT ''");
+    }
+    $applyCols = [];
+    foreach ($pdo->query('PRAGMA table_info(friend_applies)') as $c) $applyCols[] = (string)$c['name'];
+    if (!in_array('logo', $applyCols, true)) {
+        $pdo->exec("ALTER TABLE friend_applies ADD COLUMN logo TEXT NOT NULL DEFAULT ''");
     }
 
     // 分类只播种一次：用 settings 里的标记记住，删光了也不会被重新灌回来

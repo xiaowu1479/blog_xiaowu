@@ -44,6 +44,15 @@
     '            <span>联系方式</span>',
     '            <input type="text" name="contact" maxlength="120" placeholder="邮箱 / QQ，方便站长联系你（选填）">',
     '          </label>',
+    '          <label class="friend-apply__field">',
+    '            <span>站点 Logo</span>',
+    '            <input type="file" name="logo" accept="image/jpeg,image/png,image/gif,image/webp">',
+    '            <small class="friend-apply__hint">选填，jpg / png / gif / webp，2MB 以内；不传就用名称首字当头图</small>',
+    '          </label>',
+    '          <div class="friend-apply__logo" hidden>',
+    '            <img alt="Logo 预览">',
+    '            <button type="button" class="friend-apply__logo-del">移除</button>',
+    '          </div>',
     '          <div class="friend-apply__hp" aria-hidden="true">',
     '            <label>网站<input type="text" name="website" tabindex="-1" autocomplete="off"></label>',
     '          </div>',
@@ -66,6 +75,12 @@
   var submitBtn = null;
   var SUBMIT_TEXT = '提交申请';
 
+  var LOGO_MAX = 2 * 1024 * 1024;
+  var LOGO_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  var logoPreview = null;
+  var logoPreviewImg = null;
+  var logoUrl = '';
+
   /** 页面里没有弹窗就建一个；SPA 换页后脚本不会重复执行，所以也只会建一次 */
   function ensureModal() {
     if (document.getElementById('friendApplyModal')) return;
@@ -82,6 +97,36 @@
     if (!msg) return;
     msg.textContent = text || '';
     msg.className = 'friend-apply__msg' + (type ? ' is-' + type : '');
+  }
+
+  /** 清掉预览和 objectURL，避免连续选图时内存不回收 */
+  function clearLogoPreview() {
+    if (logoUrl) {
+      URL.revokeObjectURL(logoUrl);
+      logoUrl = '';
+    }
+    if (logoPreviewImg) logoPreviewImg.removeAttribute('src');
+    if (logoPreview) logoPreview.hidden = true;
+  }
+
+  function showLogoPreview(file) {
+    if (!logoPreview || !logoPreviewImg) return;
+    clearLogoPreview();
+    logoUrl = URL.createObjectURL(file);
+    logoPreviewImg.src = logoUrl;
+    logoPreview.hidden = false;
+  }
+
+  /** 返回错误文字；通过返回空串。只是先挡一层，真正的校验在 PHP 里 */
+  function checkLogo(file) {
+    if (!file) return '';
+    if (file.type && LOGO_TYPES.indexOf(file.type) === -1) {
+      return 'Logo 只支持 jpg / png / gif / webp';
+    }
+    if (file.size > LOGO_MAX) {
+      return 'Logo 不能超过 2MB，请先压缩一下';
+    }
+    return '';
   }
 
   /** 没写协议就补 https://，只接受 http / https */
@@ -126,6 +171,43 @@
     submitBtn.textContent = SUBMIT_TEXT;
   }
 
+  document.addEventListener('change', function (ev) {
+    var input = ev.target;
+    if (!input || input.name !== 'logo' || !input.form || input.form.id !== 'friendApplyForm') return;
+
+    form = input.form;
+    msg = find('.friend-apply__msg', form);
+    logoPreview = find('.friend-apply__logo', form);
+    logoPreviewImg = logoPreview ? find('img', logoPreview) : null;
+
+    var file = input.files && input.files[0] ? input.files[0] : null;
+    if (!file) {
+      clearLogoPreview();
+      setMsg('');
+      return;
+    }
+
+    var err = checkLogo(file);
+    if (err) {
+      setMsg(err, 'err');
+      input.value = '';
+      clearLogoPreview();
+      return;
+    }
+
+    setMsg('');
+    showLogoPreview(file);
+  });
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target;
+    if (!btn || !btn.classList || !btn.classList.contains('friend-apply__logo-del')) return;
+    var owner = btn.closest ? btn.closest('#friendApplyForm') : form;
+    var input = owner ? find('[name="logo"]', owner) : null;
+    if (input) input.value = '';
+    clearLogoPreview();
+  });
+
   document.addEventListener('submit', async function (ev) {
     var f = ev.target;
     if (!f || f.id !== 'friendApplyForm') return;
@@ -139,6 +221,7 @@
     var hrefEl = find('[name="href"]', f);
     var descEl = find('[name="desc"]', f);
     var contactEl = find('[name="contact"]', f);
+    var logoEl = find('[name="logo"]', f);
     var hpEl = find('[name="website"]', f);
 
     var name = nameEl ? nameEl.value.trim() : '';
@@ -146,6 +229,7 @@
     var desc = descEl ? descEl.value.trim() : '';
     var contact = contactEl ? contactEl.value.trim() : '';
     var hp = hpEl ? hpEl.value.trim() : '';
+    var logoFile = logoEl && logoEl.files && logoEl.files[0] ? logoEl.files[0] : null;
 
     if (!name) {
       setMsg('请填写站点名称', 'err');
@@ -164,10 +248,18 @@
       return;
     }
 
+    var logoErr = checkLogo(logoFile);
+    if (logoErr) {
+      setMsg(logoErr, 'err');
+      if (logoEl) logoEl.focus();
+      return;
+    }
+
     // 蜜罐命中：正常访客不会填；不发送，直接给个成功提示，别让机器人知道被识破
     if (hp) {
       setMsg('申请已提交，站长审核通过后会显示在友链里', 'ok');
       f.reset();
+      clearLogoPreview();
       return;
     }
 
@@ -185,20 +277,18 @@
         return;
       }
 
-      var body = new URLSearchParams();
-      body.set('_csrf', token);
-      body.set('name', name);
-      body.set('href', cleanHref);
-      body.set('desc', desc);
-      body.set('contact', contact);
+      var body = new FormData();
+      body.append('_csrf', token);
+      body.append('name', name);
+      body.append('href', cleanHref);
+      body.append('desc', desc);
+      body.append('contact', contact);
+      if (logoFile) body.append('logo', logoFile);
 
       var res = await fetch('api.php?friend_apply=1', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-          Accept: 'application/json'
-        },
-        body: body.toString()
+        headers: { Accept: 'application/json' },
+        body: body
       });
 
       var data = null;
@@ -212,6 +302,7 @@
 
       setMsg(data.message || '申请已提交，站长审核通过后会显示在友链里', 'ok');
       f.reset();
+      clearLogoPreview();
       resetButton();
     } catch (e) {
       setMsg('网络异常，请稍后再试', 'err');
@@ -227,7 +318,12 @@
       form = find('#friendApplyForm', modal);
       msg = form ? find('.friend-apply__msg', form) : null;
       submitBtn = form ? find('button[type="submit"]', form) : null;
+      logoPreview = form ? find('.friend-apply__logo', form) : null;
+      logoPreviewImg = logoPreview ? find('img', logoPreview) : null;
+      var logoInput = form ? find('[name="logo"]', form) : null;
+      if (logoInput) logoInput.value = '';
       setMsg('');
+      clearLogoPreview();
       resetButton();
     });
   }

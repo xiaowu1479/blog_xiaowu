@@ -10,8 +10,8 @@ declare(strict_types=1);
 function table_columns(): array
 {
     return [
-        'friends' => ['name', 'desc', 'href', 'sort', 'visible'],
-        'friend_applies' => ['name', 'desc', 'href', 'contact', 'status', 'friend_id', 'ip', 'created_at', 'reviewed_at'],
+        'friends' => ['name', 'desc', 'href', 'logo', 'sort', 'visible'],
+        'friend_applies' => ['name', 'desc', 'href', 'logo', 'contact', 'status', 'friend_id', 'ip', 'created_at', 'reviewed_at'],
         'works' => ['title', 'year', 'icon', 'desc', 'tags', 'href', 'detail', 'sort', 'visible'],
         'posts' => ['date', 'title', 'excerpt', 'content', 'href', 'sort', 'cat_id', 'visible'],
         'categories' => ['name', 'desc', 'sort', 'visible'],
@@ -343,6 +343,7 @@ function friend_apply_create(array $data): int
         'name' => (string)($data['name'] ?? ''),
         'desc' => (string)($data['desc'] ?? ''),
         'href' => (string)($data['href'] ?? ''),
+        'logo' => (string)($data['logo'] ?? ''),
         'contact' => (string)($data['contact'] ?? ''),
         'status' => 'pending',
         'ip' => (string)($data['ip'] ?? ''),
@@ -362,6 +363,7 @@ function friend_apply_approve(int $id): string
         if ((string)$app['status'] !== 'pending') return 'handled';
 
         $href = (string)$app['href'];
+        $logo = (string)($app['logo'] ?? '');
         $st = db()->prepare('SELECT id FROM friends WHERE href = ? LIMIT 1');
         $st->execute([$href]);
         $existing = $st->fetchColumn();
@@ -369,11 +371,17 @@ function friend_apply_approve(int $id): string
 
         if ($duplicate) {
             $friendId = (int)$existing;
+            // 老友链没有 Logo、而这次申请带了，就顺手补上，不用手动再传一遍
+            if ($logo !== '') {
+                db()->prepare("UPDATE friends SET logo = ? WHERE id = ? AND (logo IS NULL OR logo = '')")
+                    ->execute([$logo, $friendId]);
+            }
         } else {
             $friendId = row_save('friends', [
                 'name' => (string)$app['name'],
                 'desc' => (string)$app['desc'],
                 'href' => $href,
+                'logo' => $logo,
                 'sort' => next_sort('friends'),
                 'visible' => 1,
             ]);
@@ -467,6 +475,7 @@ function site_payload(): array
             'name' => $f['name'],
             'desc' => $f['desc'],
             'href' => $f['href'] !== '' ? $f['href'] : null,
+            'logo' => trim((string)($f['logo'] ?? '')) !== '' ? (string)$f['logo'] : null,
         ];
     }
 

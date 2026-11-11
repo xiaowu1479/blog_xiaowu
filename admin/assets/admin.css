@@ -344,6 +344,18 @@ textarea { resize: vertical; line-height: 1.6; font-family: ui-monospace, Menlo,
 .pill.approved { background: rgba(67, 198, 160, .16); color: #218a67; }
 .pill.rejected { background: rgba(225, 91, 100, .13); color: var(--a-danger); }
 
+/* 友链申请列表：名称前的小 Logo */
+.apply-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.apply-logo {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  object-fit: cover;
+  border: 1px solid var(--a-line);
+  background: #fff;
+}
+
 /* fixed 布局：单元格是 nowrap，auto 布局下浏览器没法把列压到文字宽度以下，
    posts 那种「日期+标题+摘要」的表就会撑出卡片。定宽后各列按 colgroup 分配，
    多的用省略号截断，窄屏由 .list-wrap 横向滚动兜底。 */

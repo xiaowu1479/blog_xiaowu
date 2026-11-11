@@ -629,16 +629,26 @@ function upload_field_items(string $field): array
  * 返回 ['path' => ?string, 'error' => string]：失败不输出、不退出，
  * 这样批量上传可以「能传的传、传不了的逐条报」，而不是一张坏图让整批失败。
  *
+ * 可选 $opts：
+ *   allow      => [mime => 扩展名] 只允许其中几种（默认沿用全站图片白名单）
+ *   max_bytes  => 大小上限，默认 UPLOAD_MAX
+ *   size_label => 报错里写的大小（默认 5MB）
+ *   max_side   => 最长边像素上限，0 = 不检查
+ *
  * @return array{path: ?string, error: string}
  */
-function save_upload_file(array $f, string $subdir = 'img/uploads'): array
+function save_upload_file(array $f, string $subdir = 'img/uploads', array $opts = []): array
 {
+    $maxBytes = (int)($opts['max_bytes'] ?? UPLOAD_MAX);
+    if ($maxBytes <= 0) $maxBytes = UPLOAD_MAX;
+    $sizeLabel = (string)($opts['size_label'] ?? '5MB');
+
     if ((int)($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         return ['path' => null, 'error' => '上传失败，错误码 ' . (int)($f['error'] ?? 0)];
     }
     $size = (int)($f['size'] ?? 0);
-    if ($size <= 0 || $size > UPLOAD_MAX) {
-        return ['path' => null, 'error' => '图片大小需在 5MB 以内'];
+    if ($size <= 0 || $size > $maxBytes) {
+        return ['path' => null, 'error' => '图片大小需在 ' . $sizeLabel . ' 以内'];
     }
 
     $allow = [
@@ -650,6 +660,9 @@ function save_upload_file(array $f, string $subdir = 'img/uploads'): array
         'image/vnd.microsoft.icon' => 'ico',
         'image/x-icon' => 'ico',
     ];
+    if (!empty($opts['allow']) && is_array($opts['allow'])) {
+        $allow = $opts['allow'];
+    }
     $tmp = (string)($f['tmp_name'] ?? '');
     if ($tmp === '' || !is_file($tmp)) {
         return ['path' => null, 'error' => '临时文件不见了，请重试'];
@@ -657,7 +670,20 @@ function save_upload_file(array $f, string $subdir = 'img/uploads'): array
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime = (string)$finfo->file($tmp);
     if (!isset($allow[$mime])) {
-        return ['path' => null, 'error' => '只允许 jpg / png / gif / webp / svg / ico，当前是 ' . $mime];
+        $exts = implode(' / ', array_values(array_unique($allow)));
+        return ['path' => null, 'error' => '只允许 ' . $exts . '，当前是 ' . $mime];
+    }
+
+    // 尺寸上限只对位图生效；传进来的白名单如果是 SVG 之类，getimagesize 拿不到就跳过
+    $maxSide = (int)($opts['max_side'] ?? 0);
+    if ($maxSide > 0) {
+        $info = @getimagesize($tmp);
+        if ($info) {
+            [$w, $h] = $info;
+            if ($w > $maxSide || $h > $maxSide) {
+                return ['path' => null, 'error' => '图片尺寸不能超过 ' . $maxSide . '×' . $maxSide . ' 像素'];
+            }
+        }
     }
 
     $dir = APP_ROOT . '/' . trim($subdir, '/');

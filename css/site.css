@@ -1064,6 +1064,19 @@ a.friend:hover {
   font-weight: 700;
 }
 
+/* 有 Logo 时盖住首字底色，图片加载失败会退回首字（js/site.js 里处理） */
+.friend-ava.has-logo {
+  overflow: hidden;
+  background: var(--ui-card-2);
+}
+
+.friend-ava img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .friend-body {
   min-width: 0;
 }
@@ -1178,6 +1191,68 @@ a.friend:hover {
 .friend-apply__field input::placeholder {
   color: var(--ui-muted);
   opacity: .75;
+}
+
+.friend-apply__field input[type="file"] {
+  padding: 6px 8px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.friend-apply__field input[type="file"]::file-selector-button {
+  margin-right: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 6px;
+  background: var(--ui-card);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.friend-apply__hint {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ui-muted);
+}
+
+.friend-apply__logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px dashed var(--ui-line);
+  border-radius: 8px;
+}
+
+.friend-apply__logo[hidden] {
+  display: none;
+}
+
+.friend-apply__logo img {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-card-2);
+  object-fit: cover;
+}
+
+.friend-apply__logo-del {
+  padding: 3px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ui-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.friend-apply__logo-del:hover {
+  border-color: #e15b64;
+  color: #e15b64;
 }
 
 /* 蜜罐：不能用 display:none（部分机器人会跳过隐藏元素），移出可视区更稳妥 */

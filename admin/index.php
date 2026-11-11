@@ -40,6 +40,7 @@ function entity_defs(): array
                 ['name', '名称', 'text', true],
                 ['desc', '一句话描述', 'text', false, '例如「前端文档」'],
                 ['href', '链接', 'text', false, '留空则前台显示为不可点状态'],
+                ['logo', 'Logo', 'upload', false, '选填，建议正方形小图标；不传就用名称首字当头像'],
                 ['sort', '排序', 'int'],
                 ['visible', '前台显示', 'bool'],
             ],
@@ -768,7 +769,14 @@ function render_friend_applies(): void
             <?php $status = (string)$it['status']; ?>
             <tr>
               <td><?= (int)$it['id'] ?></td>
-              <td title="<?= h((string)$it['name']) ?>"><?= h(mb_strimwidth((string)$it['name'], 0, 18, '…')) ?></td>
+              <td title="<?= h((string)$it['name']) ?>">
+                <span class="apply-name">
+                  <?php if (trim((string)($it['logo'] ?? '')) !== ''): ?>
+                    <img class="apply-logo" src="<?= h(preview_src((string)$it['logo'])) ?>" alt="" loading="lazy" onerror="this.remove()">
+                  <?php endif; ?>
+                  <?= h(mb_strimwidth((string)$it['name'], 0, 18, '…')) ?>
+                </span>
+              </td>
               <td title="<?= h((string)$it['href']) ?>">
                 <a href="<?= h((string)$it['href']) ?>" target="_blank" rel="noopener nofollow">
                   <?= h(mb_strimwidth((string)$it['href'], 0, 30, '…')) ?>

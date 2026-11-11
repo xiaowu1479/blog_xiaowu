@@ -67,6 +67,10 @@ if (db_missing()) {
 // 前台友链申请：POST api.php?friend_apply=1
 // 只写申请队列，不会直接进 friends；后台「友链申请」审核通过后才会上前台。
 if (is_post() && get_str('friend_apply') !== '') {
+    // 整个请求体超过 post_max_size 时 PHP 会把 $_POST / $_FILES 清空，这里给人话提示
+    if (!$_POST && !$_FILES && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        api_out(['ok' => false, 'error' => '图片太大了，请压缩到 2MB 以内再试'], 413);
+    }
     csrf_check();   // 和后台一样用双提交 Cookie，防止被别的站点代提交
 
     // 蜜罐：正常访客看不到这个字段，填了的一律当成机器人，返回成功但不入库
@@ -104,14 +108,46 @@ if (is_post() && get_str('friend_apply') !== '') {
         api_out(['ok' => false, 'error' => '这个站点已经在友链里了'], 409);
     }
 
-    $id = friend_apply_create([
-        'name' => $name,
-        'desc' => $desc,
-        'href' => $href,
-        'contact' => $contact,
-        'ip' => $ip,
-    ]);
-    if (!$id) api_out(['ok' => false, 'error' => '保存失败，请稍后再试'], 500);
+    // Logo 选填：只收位图，2MB / 4096px 封顶。校验不过就整条申请退回，不静默丢图。
+    $logo = '';
+    $logoFile = upload_field('logo');
+    if ($logoFile !== null) {
+        $up = save_upload_file($logoFile, 'img/uploads', [
+            'allow' => [
+                'image/jpeg' => 'jpg',
+                'image/png'  => 'png',
+                'image/gif'  => 'gif',
+                'image/webp' => 'webp',
+            ],
+            'max_bytes' => 2 * 1024 * 1024,
+            'size_label' => '2MB',
+            'max_side' => 4096,
+        ]);
+        if ($up['error'] !== '') api_out(['ok' => false, 'error' => $up['error']], 400);
+        $logo = (string)$up['path'];
+    }
+
+    try {
+        $id = friend_apply_create([
+            'name' => $name,
+            'desc' => $desc,
+            'href' => $href,
+            'logo' => $logo,
+            'contact' => $contact,
+            'ip' => $ip,
+        ]);
+    } catch (Throwable $e) {
+        if ($logo !== '' && str_starts_with($logo, 'img/uploads/')) {
+            @unlink(APP_ROOT . '/' . $logo);   // 入库失败就别在磁盘上留垃圾
+        }
+        api_out(['ok' => false, 'error' => '保存失败，请稍后再试'], 500);
+    }
+    if (!$id) {
+        if ($logo !== '' && str_starts_with($logo, 'img/uploads/')) {
+            @unlink(APP_ROOT . '/' . $logo);
+        }
+        api_out(['ok' => false, 'error' => '保存失败，请稍后再试'], 500);
+    }
 
     api_out(['ok' => true, 'message' => '申请已提交，站长审核通过后会显示在友链里']);
 }
