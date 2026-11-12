@@ -218,6 +218,366 @@
     return { chars: text.length, cn: cn, words: words };
   }
 
+  /* ---------------- EasyMDE（第三方 Markdown 编辑器） ---------------- */
+
+  /** 预览是渲染在 /admin/ 下的，正文里的 img/uploads/x.jpg 要补一层 ../ 才显示得出来 */
+  function fixPreviewHtml(html) {
+    return String(html).replace(
+      /(<img\b[^>]*\bsrc=")(?!https?:|\/\/|\/|\.\.\/|data:)([^"]+)/gi,
+      '$1../$2'
+    );
+  }
+
+  /**
+   * 编辑区的行内图片缩略图：
+   * 把非当前行的 ![alt](url) 替换成小图，点一下回到源码继续改；
+   * 光标所在行始终保持 Markdown 源码，避免「图片挡住了正在写的内容」。
+   */
+  function inlineImages(cm) {
+    var marks = [];
+    var timer = null;
+    var refreshTimer = null;
+
+    function clearMarks() {
+      marks.forEach(function (mark) { mark.clear(); });
+      marks = [];
+    }
+
+    /** 图片是异步解码的，尺寸出来后要让 CodeMirror 重新量行高，否则文字会叠在一起 */
+    function refreshSoon() {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(function () { cm.refresh(); }, 60);
+    }
+
+    /** 后台在 /admin/ 下，站点根相对路径要补 ../ */
+    function imageSrc(raw) {
+      if (/^(https?:)?\/\//i.test(raw) || /^data:/i.test(raw) || raw.charAt(0) === '/') return raw;
+      return '../' + raw.replace(/^\.\//, '');
+    }
+
+    var lastKey = null;
+
+    function draw(force) {
+      if (cm.somethingSelected()) { clearMarks(); return; }
+
+      var currentLine = cm.getCursor().line;
+      var vp = cm.getViewport();
+      var key = vp.from + ':' + vp.to + ':' + currentLine + ':' + cm.getValue().length;
+      // 内容/光标没变时不要重建，否则「刷新 → 图片 load → 再刷新」会来回死循环
+      if (!force && key === lastKey) return;
+      lastKey = key;
+
+      clearMarks();
+      var re = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+
+      for (var ln = vp.from; ln <= vp.to; ln++) {
+        if (ln === currentLine) continue;
+        var line = cm.getLine(ln);
+        if (!line || line.indexOf('![') === -1) continue;
+
+        re.lastIndex = 0;
+        var m;
+        while ((m = re.exec(line))) {
+          (function (match) {
+            var alt = match[1] || '';
+            var path = match[2];
+            var from = { line: ln, ch: match.index };
+            var to = { line: ln, ch: match.index + match[0].length };
+
+            var wrap = document.createElement('span');
+            wrap.className = 'md-inline-img';
+            wrap.title = '点击编辑这段 Markdown';
+
+            var img = document.createElement('img');
+            img.alt = alt;
+            img.src = imageSrc(path);
+            wrap.appendChild(img);
+
+            img.addEventListener('load', refreshSoon);
+
+            if (alt) {
+              var cap = document.createElement('span');
+              cap.className = 'md-inline-img__cap';
+              cap.textContent = alt;
+              wrap.appendChild(cap);
+            }
+
+            wrap.addEventListener('click', function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              clearMarks();
+              cm.setCursor(from);
+              cm.focus();
+            });
+
+            img.addEventListener('error', function () {
+              var fail = document.createElement('span');
+              fail.className = 'md-inline-img__fail';
+              fail.textContent = '图片没加载出来：' + path;
+              wrap.innerHTML = '';
+              wrap.appendChild(fail);
+              refreshSoon();
+            });
+
+            marks.push(cm.markText(from, to, { replacedWith: wrap, atomic: true }));
+          })(m);
+        }
+      }
+
+      refreshSoon();
+    }
+
+    function schedule(force) {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(function () { draw(force); }, 120);
+    }
+
+    cm.on('change', function () { schedule(true); });
+    cm.on('cursorActivity', function () { schedule(true); });
+    cm.on('viewportChange', function () { schedule(false); });
+    draw(true);
+  }
+
+  /** 页面底部飘一条提示，用于上传失败等需要马上看到的信息 */
+  function notify(text) {
+    var tip = document.createElement('div');
+    tip.className = 'md-easy-toast';
+    tip.textContent = text;
+    document.body.appendChild(tip);
+    window.setTimeout(function () { tip.classList.add('is-out'); }, 2600);
+    window.setTimeout(function () { tip.remove(); }, 3200);
+  }
+
+  /**
+   * 用 Vditor 的即时渲染（ir）接管编辑器：
+   * 编辑区就是最终排版，图片直接显示；存储的仍是 Markdown，前台渲染逻辑不用改。
+   */
+  function initVditor(root, ta) {
+    var csrf = csrfOf(ta.form || document);
+    var dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var panes = root.querySelector('.md-panes');
+    if (!panes) return;
+
+    // 先隐藏自研工具栏/右栏预览，避免 Vditor 渲染前闪一下
+    root.classList.add('md--vditor');
+
+    var host = document.createElement('div');
+    host.className = 'md-vditor';
+    panes.appendChild(host);
+
+    var vditor = new window.Vditor(host, {
+      mode: 'wysiwyg',   // 所见即所得：完全排版，不显示 Markdown 标记
+      value: ta.value,
+      cdn: 'assets/vendor/vditor',
+      lang: 'zh_CN',
+      height: 520,
+      theme: dark ? 'dark' : 'classic',
+      placeholder: '写点东西…图片可以粘贴、拖拽，或用工具栏上传',
+      cache: { enable: false },       // 草稿沿用站内自己的 localStorage 逻辑
+      counter: { enable: true, type: 'text' },
+      outline: { enable: false },
+      toolbarConfig: { pin: true },
+      preview: {
+        // 后台在 /admin/ 下，正文里的 img/uploads/x.jpg 显示时要补 ../（只影响渲染，不改内容）
+        markdown: { linkBase: '../' },
+        hljs: { enable: true, style: dark ? 'native' : 'github', lineNumber: false },
+        theme: { current: dark ? 'dark' : 'light' }
+      },
+      upload: {
+        url: 'upload.php',
+        fieldName: 'file',
+        accept: 'image/*',
+        max: 5 * 1024 * 1024,
+        extraData: csrf ? { _csrf: csrf } : {},
+        // 不用 format：Vditor 在所见即所得模式下会把图片插成 <img src="相对路径"> 的 HTML，
+        // 相对 /admin/ 解析会 404，而且存进正文的是 HTML 而不是 Markdown。
+        // 用 success 自己接管，统一插入 Markdown 语法，交给预览渲染补 ../。
+        success: function (range, responseText) {
+          var res = {};
+          try { res = JSON.parse(responseText) || {}; } catch (e) { res = {}; }
+          if (!res.path) {
+            notify('图片上传失败：' + (res.error || '服务端没有返回图片路径'));
+            return;
+          }
+          var alt = res.path.split('/').pop().replace(/\.[^.]+$/, '').replace(/[[\]]/g, '');
+          vditor.insertValue('![' + alt + '](' + res.path + ')', true);
+        },
+        error: function (msg) { notify('图片上传失败：' + msg); }
+      },
+      input: function (value) {
+        try { localStorage.setItem(DRAFT_KEY, value); } catch (e) { /* 隐私模式下忽略 */ }
+      },
+      toolbar: [
+        'headings', 'bold', 'italic', 'strike', '|',
+        'list', 'ordered-list', 'check', 'quote', '|',
+        'link', 'upload', 'media', '|',
+        'code', 'inline-code', 'table', '|',
+        'undo', 'redo', '|',
+        'fullscreen'
+      ].map(function (item) {
+        if (item !== 'media') return item;
+        return {
+          name: 'media',
+          tip: '插入媒体库图片',
+          icon: '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M21 5v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Zm-2 12.6-4.3-5.8-3.4 4.4-2.4-2.9L5 18h14v-.4Z"/></svg>',
+          click: function () {
+            if (!window.ZhsMedia || typeof window.ZhsMedia.open !== 'function') {
+              notify('媒体库脚本没加载出来，刷新页面再试');
+              return;
+            }
+            window.ZhsMedia.open(function (rel, item) {
+              var alt = (item && item.name ? item.name : '图片')
+                .replace(/\.[^.]+$/, '').replace(/[[\]]/g, '').trim() || '图片';
+              vditor.insertValue('![' + alt + '](' + rel + ')', true);
+            });
+          }
+        };
+      })
+    });
+
+    // 提交前把 Markdown 同步回 textarea
+    if (ta.form) {
+      ta.form.addEventListener('submit', function () {
+        ta.value = vditor.getValue();
+        try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* 忽略 */ }
+      });
+    }
+  }
+
+  /**
+   * 用 EasyMDE 接管原来的 textarea：
+   * 自研的工具栏和右栏预览由 admin.css 里的 .md--easy 规则隐藏，
+   * 图片上传、媒体库、草稿、字数统计这些站内逻辑继续保留。
+   */
+  function initEasy(root, ta) {
+    var csrf = csrfOf(ta.form || document);
+    var mde = null;
+
+    function status(text) {
+      if (mde) mde.updateStatusBar('upload-image', text);
+    }
+
+    /** 工具栏「插入本地图片」：选文件 → 上传 → 在光标处插入 Markdown 图片 */
+    function pickImage() {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.multiple = true;
+      input.addEventListener('change', function () {
+        var files = Array.prototype.slice.call(input.files || []);
+        files.forEach(function (file) {
+          if (file.size > 5 * 1024 * 1024) { notify('「' + file.name + '」超过 5MB，换一张小点的'); return; }
+          status('正在上传 ' + file.name);
+          uploadImage(file, csrf).then(function (path) {
+            mde.codemirror.replaceSelection('![' + altFrom(file) + '](' + path + ')');
+            mde.codemirror.focus();
+            status('已插入 ' + file.name);
+            window.setTimeout(function () { status('拖拽或粘贴图片可上传'); }, 1600);
+          }, function (e) {
+            var msg = e && e.message ? e.message : '未知错误';
+            status('上传失败：' + msg);
+            notify('图片上传失败：' + msg);
+          });
+        });
+      });
+      input.click();
+    }
+
+    function insertFromMedia() {
+      if (!window.ZhsMedia || typeof window.ZhsMedia.open !== 'function') {
+        status('媒体库脚本没加载出来，刷新页面再试');
+        return;
+      }
+      window.ZhsMedia.open(function (rel, item) {
+        var alt = (item && item.name ? item.name : '图片')
+          .replace(/\.[^.]+$/, '').replace(/[[\]]/g, '').trim() || '图片';
+        mde.codemirror.replaceSelection('![' + alt + '](' + rel + ')');
+        mde.codemirror.focus();
+        status('已插入媒体库图片');
+        window.setTimeout(function () { status('拖拽或粘贴图片可上传'); }, 1600);
+      });
+    }
+
+    mde = new window.EasyMDE({
+      element: ta,
+      autoDownloadFontAwesome: false,      // 站内已经加载了 Font Awesome
+      spellChecker: false,                 // 不联网拉英文词典
+      nativeSpellcheck: true,
+      placeholder: '在这里写 Markdown…',
+      minHeight: '340px',
+      previewClass: ['editor-preview', 'md-body'],
+      uploadImage: true,
+      imageAccept: 'image/*',
+      imageMaxSize: 5 * 1024 * 1024,
+      imageTexts: {
+        sbInit: '拖拽或粘贴图片可上传',
+        sbOnDragEnter: '松手就会上传这张图',
+        sbOnDrop: '正在上传 #images_names#',
+        sbOnUploaded: '已插入 #image_name#'
+      },
+      status: [
+        'upload-image',   // 上传进度/结果，必须占一格，否则 updateStatusBar 找不到元素
+        {
+          className: 'md-easy-count',
+          defaultValue: '',
+          onUpdate: function (el) {
+            var c = countChars(mde ? mde.value() : ta.value);
+            el.textContent = c.chars + ' 字（中文 ' + c.cn + ' 字 · 英文 ' + c.words + ' 词）';
+          }
+        }
+      ],
+      toolbar: [
+        'bold', 'italic', 'strikethrough', '|',
+        'heading', 'quote', 'unordered-list', 'ordered-list', '|',
+        'link',
+        { name: 'upload-local-image', action: pickImage, className: 'fa-solid fa-image', title: '插入本地图片' },
+        { name: 'media', action: insertFromMedia, className: 'fa-solid fa-photo-film', title: '插入媒体库图片' },
+        '|', 'code', 'horizontal-rule', '|',
+        'side-by-side', 'fullscreen', '|',
+        'undo', 'redo'
+      ],
+      // 预览和前台正文用同一个渲染器，避免「预览能用、发出去垮掉」
+      previewRender: function (text) {
+        return fixPreviewHtml(window.ZhsMd ? window.ZhsMd.render(text) : '');
+      },
+      imageUploadFunction: function (file, onSuccess, onError) {
+        if (file.size > 5 * 1024 * 1024) { onError('图片超过 5MB'); return; }
+        uploadImage(file, csrf).then(onSuccess, function (e) {
+          onError(e && e.message ? e.message : '上传失败');
+        });
+      },
+      errorCallback: function (msg) {
+        status('上传失败：' + msg);
+        notify('图片上传失败：' + msg);
+      }
+    });
+
+    // 建好之后再隐藏自研界面：初始化时 textarea 还要能被 CodeMirror 正常量尺寸
+    root.classList.add('md--easy');
+
+    // 编辑区里的图片语法直接显示成缩略图（点一下回源码）
+    inlineImages(mde.codemirror);
+
+    function refreshCount() {
+      var c = countChars(mde.value());
+      mde.updateStatusBar('md-easy-count', c.chars + ' 字（中文 ' + c.cn + ' 字 · 英文 ' + c.words + ' 词）');
+    }
+    refreshCount();
+
+    // 草稿沿用原来的键，换回旧编辑器时还能接着写
+    mde.codemirror.on('change', function () {
+      try { localStorage.setItem(DRAFT_KEY, mde.value()); } catch (e) { /* 隐私模式下会失败，忽略 */ }
+    });
+
+    // 提交前把内容同步回 textarea（CodeMirror 自己也会同步，这里兜个底）
+    if (ta.form) {
+      ta.form.addEventListener('submit', function () {
+        ta.value = mde.value();
+        try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* 忽略 */ }
+      });
+    }
+  }
+
   function init(root) {
     var ta = root.querySelector('[data-md-input]');
     var preview = root.querySelector('[data-md-preview]');
@@ -225,6 +585,10 @@
     var viewBtn = root.querySelector('[data-md-view]');
     var status = root.querySelector('[data-md-status]');
     if (!ta || !preview) return;
+
+    // 首选 Vditor 即时渲染（所见即所得），加载失败再退回 EasyMDE / 自研文本框
+    if (window.Vditor) { initVditor(root, ta); return; }
+    if (window.EasyMDE) { initEasy(root, ta); return; }
 
     // 点工具栏「图片」按钮时用它选本地文件；选完走和粘贴/拖拽同一条上传逻辑
     var picker = document.createElement('input');

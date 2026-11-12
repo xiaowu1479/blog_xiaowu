@@ -615,6 +615,149 @@ table.kv td { padding: 5px 0; }
 .md.is-dragging .md-panes { outline: 2px dashed var(--a-accent); outline-offset: -2px; border-radius: 8px; }
 .md.is-dragging .md-preview { background: rgba(116, 158, 252, .06); }
 
+/* ---------- EasyMDE 接管后的样式适配（.md--easy 由 editor.js 加上） ---------- */
+/* 老的自研工具栏 / 右栏预览 / 提示都隐藏，避免两套界面叠在一起 */
+.md--easy .md-bar,
+.md--easy .md-preview,
+.md--easy .md-hint { display: none; }
+.md--easy .md-panes { display: block; }
+.md--easy .md-panes textarea { display: none; }
+
+.md--easy .editor-toolbar {
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--a-line);
+  border-radius: 0;
+  background: var(--a-bg);
+}
+.md--easy .editor-toolbar button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 5px;
+  border-radius: 7px;
+  color: var(--a-muted);
+  font-size: 12.5px;
+}
+.md--easy .editor-toolbar button:hover,
+.md--easy .editor-toolbar button.active {
+  background: var(--a-line);
+  border-color: transparent;
+  color: var(--a-text);
+}
+.md--easy .editor-toolbar i.separator {
+  border-left-color: var(--a-line);
+  border-right: 0;
+}
+
+.md--easy .CodeMirror {
+  height: 360px;
+  padding: 6px 6px 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--a-text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.md--easy .CodeMirror-cursor { border-left-color: var(--a-text); }
+.md--easy .CodeMirror-selected { background: rgba(116, 158, 252, .2); }
+.md--easy .CodeMirror-focused .CodeMirror-selected { background: rgba(116, 158, 252, .28); }
+
+.md--easy .editor-statusbar {
+  padding: 6px 10px;
+  border-top: 1px solid var(--a-line);
+  color: var(--a-muted);
+  font-size: 11.5px;
+}
+.md--easy .editor-statusbar span { min-width: 0; margin-left: 10px; }
+
+/* 分栏 / 全屏预览跟着后台卡片配色走 */
+.md--easy .editor-preview,
+.md--easy .editor-preview-side,
+.md--easy .editor-preview-full {
+  background: var(--a-card);
+  color: var(--a-text);
+}
+.md--easy .editor-preview-side { border-left: 1px solid var(--a-line); }
+
+/* 编辑区里的行内图片缩略图（点一下回到源码） */
+.md--easy .md-inline-img {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+  margin: 6px 0;
+  vertical-align: top;
+  cursor: zoom-in;
+}
+.md--easy .md-inline-img img {
+  display: block;
+  max-width: min(100%, 360px);
+  max-height: 150px;
+  border: 1px solid var(--a-line);
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+}
+.md--easy .md-inline-img__cap {
+  color: var(--a-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.md--easy .md-inline-img__fail {
+  display: inline-block;
+  padding: 4px 8px;
+  border: 1px dashed var(--a-line);
+  border-radius: 6px;
+  color: var(--a-muted);
+  font-size: 11.5px;
+}
+
+/* 全屏时盖住左侧导航（侧栏 z-index 是 60） */
+.md--easy .editor-toolbar.fullscreen,
+.md--easy .CodeMirror-fullscreen,
+.md--easy .CodeMirror-fullscreen + .editor-preview-side { z-index: 80; }
+
+/* ---------- Vditor 即时渲染接管后的样式适配（.md--vditor 由 editor.js 加上） ---------- */
+.md--vditor {
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.md--vditor .md-bar,
+.md--vditor .md-preview,
+.md--vditor .md-hint { display: none; }
+.md--vditor .md-panes { display: block; }
+.md--vditor .md-panes textarea { display: none; }
+.md--vditor .md-vditor { width: 100%; }
+
+/* 上传失败的浮动提示 */
+.md-easy-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  z-index: 300;
+  max-width: min(440px, calc(100vw - 40px));
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(32, 38, 52, .95);
+  color: #fff;
+  font-size: 12.5px;
+  line-height: 1.5;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .28);
+  transform: translateX(-50%);
+  transition: opacity .4s ease, transform .4s ease;
+  pointer-events: none;
+}
+.md-easy-toast.is-out { opacity: 0; transform: translate(-50%, 8px); }
+
+@media (prefers-color-scheme: dark) {
+  .md--easy .cm-s-easymde .cm-comment { background: rgba(255, 255, 255, .08); }
+  .md--easy .editor-toolbar.fullscreen { background: var(--a-card); }
+  .md--easy .editor-toolbar.fullscreen::before,
+  .md--easy .editor-toolbar.fullscreen::after { background: none; }
+}
+
 /* ---------- 系统更新 ---------- */
 .up-kv { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .up-kv th { width: 88px; text-align: left; font-weight: 600; color: var(--a-muted); padding: 8px 12px 8px 0; vertical-align: top; white-space: nowrap; }

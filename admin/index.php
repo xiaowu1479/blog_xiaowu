@@ -1019,6 +1019,9 @@ function layout(string $title, string $content, string $active): void
 <?= favicon_link() ?>
 <link rel="stylesheet" href="../css/all.min.css">
 <link rel="stylesheet" href="../css/md.css?v=<?= (int)@filemtime(__DIR__ . '/../css/md.css') ?>">
+<?php if ($active === 'posts'): ?>
+<link rel="stylesheet" href="assets/vendor/vditor/dist/index.css?v=<?= (int)@filemtime(__DIR__ . '/assets/vendor/vditor/dist/index.css') ?>">
+<?php endif; ?>
 <link rel="stylesheet" href="assets/admin.css?v=<?= (int)@filemtime(__DIR__ . '/assets/admin.css') ?>">
 </head>
 <body>
@@ -1082,6 +1085,7 @@ function layout(string $title, string $content, string $active): void
 </script>
 <?php if ($active === 'posts'): ?>
 <script src="../js/markdown.js?v=<?= filemtime(__DIR__ . '/../js/markdown.js') ?>"></script>
+<script src="assets/vendor/vditor/dist/index.min.js?v=<?= (int)@filemtime(__DIR__ . '/assets/vendor/vditor/dist/index.min.js') ?>"></script>
 <script src="assets/editor.js?v=<?= filemtime(__DIR__ . '/assets/editor.js') ?>"></script>
 <?php endif; ?>
 </body>

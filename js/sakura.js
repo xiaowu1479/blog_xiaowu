@@ -1,5 +1,5 @@
 /* ============================================================================
-   sakura.js —— 樱花飘落特效
+   sakura.js —— 樱花飘落特效（全站生效：首页与作品集 / 博客 / 相册 / 友链 / 文章页）
    ----------------------------------------------------------------------------
    首页「更多工具」里的樱花按钮调用 window.switchSakura() 开关。
 
@@ -41,12 +41,6 @@
 
   function petalCount() {
     return (window.innerWidth || 1024) < 768 ? 26 : 50;
-  }
-
-  /** 樱花只在首页出现；SPA 换页时 body 的 data-page 会变 */
-  function onIndexPage() {
-    var p = document.body.getAttribute('data-page');
-    return !p || p === 'index';
   }
 
   /** 重新投放一片花瓣；initial=true 时先铺满全屏 */
@@ -142,7 +136,7 @@
   }
 
   function play() {
-    if (running || !imgReady || !onIndexPage()) return;
+    if (running || !imgReady) return;
     createCanvas();
     if (!visible) return;         // 后台标签页先不跑，visibilitychange 里恢复
     running = true;
@@ -223,19 +217,6 @@
     ensureImage();
     // 没选过时默认开；选过「关」就保持关；减少动态效果时不自动播放
     if (preference() !== 'off' && !prefersReduced()) start(false);
-
-    // 只在首页播放：局部换页改 data-page 时自动暂停 / 恢复
-    if (window.MutationObserver) {
-      new MutationObserver(function () {
-        if (!document.body.classList.contains('sakura-on')) return;
-        if (onIndexPage()) {
-          if (imgReady) play();
-        } else {
-          pause();
-          removeCanvas();
-        }
-      }).observe(document.body, { attributes: true, attributeFilter: ['data-page'] });
-    }
   }
 
   document.addEventListener('visibilitychange', function () {

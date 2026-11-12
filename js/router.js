@@ -22,11 +22,13 @@
 
   // 目标页额外需要的脚本 / 样式（公共的 jquery / shell / site 等首屏已经加载）
   var SCRIPTS = {
-    'index.html': ['js/player.js', 'js/sakura.js'],
+    'index.html': ['js/player.js'],
     'blog.html': ['js/blog.js'],
     'post.html': ['js/markdown.js'],
     'links.html': ['js/friend-apply.js']
   };
+  // 全站都要的脚本：樱花特效在首页和子页面都播放（已加载时 ensureScript 直接跳过）
+  var COMMON_SCRIPTS = ['js/sakura.js'];
   var STYLES = {
     'blog.html': ['css/blog.css'],
     'post.html': ['css/md.css']
@@ -151,6 +153,7 @@
 
   function loadAssets(file) {
     var jobs = [];
+    COMMON_SCRIPTS.forEach(function (src) { jobs.push(ensureScript(src)); });
     (SCRIPTS[file] || []).forEach(function (src) { jobs.push(ensureScript(src)); });
     (STYLES[file] || []).forEach(function (href) { jobs.push(ensureStyle(href)); });
     return Promise.all(jobs);
