@@ -42,11 +42,10 @@
 
   const EXTRA = [
     { icon: 'fa-solid fa-feather-pointed', text: '关于', target: '#aboutModal' },
-    { icon: 'fa-solid fa-globe', text: '旗下站点', target: '#siteModal' },
     { icon: 'fa-solid fa-qrcode', text: '赞赏', target: '#supportModal' }
   ];
 
-  /* 5 个弹窗：内容和首页完全一致，实际文字由 site.js 从 api.php 填 */
+  /* 4 个弹窗：内容和首页完全一致，实际文字由 site.js 从 api.php 填 */
   const MODALS = `
   <div class="modal fade" id="supportModal" tabindex="-1" aria-labelledby="supportTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -67,36 +66,31 @@
     </div>
   </div>
 
-  <div class="modal fade" id="aboutModal" tabindex="-1" aria-labelledby="aboutTitle" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content" style="max-width:300px;margin:0 auto;">
-        <div class="modal-header">
-          <h5 class="modal-title" id="aboutTitle">
-            <i class="fa-solid fa-quote-left" style="color:#74C0FC"></i>&nbsp;关于&nbsp;
-            <i class="fa-solid fa-quote-right" style="color:#74C0FC"></i>
-          </h5>
-          <button type="button" class="close" data-dismiss="modal" aria-label="关闭">
-            <span aria-hidden="true">&times;</span>
+  <div class="modal fade" id="aboutModal" tabindex="-1" aria-labelledby="aboutName" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered zhs-about-dialog">
+      <div class="modal-content zhs-about">
+        <div class="zhs-about__head">
+          <div class="zhs-about__avatar">
+            <img id="aboutAvatar" src="img/avatar.svg" alt="">
+          </div>
+          <div class="zhs-about__id">
+            <h5 class="zhs-about__name" id="aboutName">小悟大人</h5>
+            <span class="zhs-about__ver" id="aboutVersion"></span>
+          </div>
+          <button type="button" class="zhs-about__close" data-dismiss="modal" aria-label="关闭">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </div>
-        <div class="modal-body" id="aboutBody"></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal fade" id="siteModal" tabindex="-1" aria-labelledby="siteTitle" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content" style="max-width:280px;margin:0 auto;">
-        <div class="modal-header">
-          <h5 class="modal-title" id="siteTitle">
-            <i class="fa-solid fa-quote-left" style="color:#74C0FC"></i>&nbsp;旗下站点&nbsp;
-            <i class="fa-solid fa-quote-right" style="color:#74C0FC"></i>
-          </h5>
-          <button type="button" class="close" data-dismiss="modal" aria-label="关闭">
-            <span aria-hidden="true">&times;</span>
-          </button>
+        <div class="zhs-about__body">
+          <section class="zhs-about__sec">
+            <div class="zhs-about__label">关于本站</div>
+            <div class="zhs-about__lines" id="aboutBody"></div>
+          </section>
+          <section class="zhs-about__sec">
+            <div class="zhs-about__label">旗下站点</div>
+            <div class="zhs-sites" id="siteBody"></div>
+          </section>
         </div>
-        <div class="modal-body" id="siteBody"></div>
       </div>
     </div>
   </div>

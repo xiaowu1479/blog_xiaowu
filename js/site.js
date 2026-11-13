@@ -362,18 +362,29 @@ const SITE = {
     const box = $('#aboutBody');
     if (!box) return;
     box.innerHTML = '';
-    box.appendChild(make('span', {}, [
-      make('i', { class: 'fa-regular fa-note-sticky', style: 'color:#74C0FC' }),
-      document.createTextNode('\u00a0 ' + SITE.about.version)
-    ]));
-    box.appendChild(make('hr'));
-    SITE.about.lines.forEach((l, i) => {
-      box.appendChild(make('span', {}, [
-        make('i', { class: l.icon, style: 'color:' + (l.color || 'inherit') }),
-        document.createTextNode('\u00a0 ' + l.text)
+
+    const lines = Array.isArray(SITE.about && SITE.about.lines) ? SITE.about.lines : [];
+    lines.forEach((l) => {
+      box.appendChild(make('div', { class: 'zhs-about__line' }, [
+        make('span', { class: 'zhs-about__ico' }, [
+          make('i', { class: l.icon, style: 'color:' + (l.color || 'var(--ui-accent)') })
+        ]),
+        make('span', { class: 'zhs-about__txt', text: l.text })
       ]));
-      if (i < SITE.about.lines.length - 1) box.appendChild(make('hr'));
     });
+
+    // 弹窗头部：头像 / 名字 / 版本号，跟站点内容保持一致
+    const nameEl = $('#aboutName');
+    if (nameEl) nameEl.textContent = SITE.name;
+    const verEl = $('#aboutVersion');
+    if (verEl) verEl.textContent = (SITE.about && SITE.about.version) || '';
+    const avatarEl = $('#aboutAvatar');
+    if (avatarEl) {
+      avatarEl.style.visibility = '';
+      avatarEl.src = SITE.avatar;
+      avatarEl.alt = SITE.name;
+      avatarEl.onerror = () => { avatarEl.style.visibility = 'hidden'; };
+    }
   }
 
   /**
@@ -414,23 +425,34 @@ const SITE = {
     const box = $('#siteBody');
     if (!box) return;
     box.innerHTML = '';
-    SITE.sites.forEach((raw) => {
+
+    const list = Array.isArray(SITE.sites) ? SITE.sites : [];
+    list.forEach((raw) => {
       const item = parseSiteLine(raw);
       if (!item) return;
-      const labelNode = document.createTextNode('\u00a0 ' + item.label);
-      box.appendChild(make('div', { class: 'post-date', style: 'font-size:12.5px;color:var(--ui-text);padding:3px 0' }, [
-        make('i', { class: 'fa-solid fa-link', style: 'color:#74C0FC;font-size:10px' }),
-        item.href !== ''
-          ? make('a', {
-            href: item.href,
-            target: '_blank',
-            rel: 'noopener noreferrer',
-            title: item.href,
-            style: 'text-decoration:none;color:inherit'
-          }, [labelNode])
-          : labelNode
-      ]));
+
+      const row = [
+        make('span', { class: 'zhs-sites__ico' }, [make('i', { class: 'fa-solid fa-globe' })]),
+        make('span', { class: 'zhs-sites__name', text: item.label })
+      ];
+
+      if (item.href !== '') {
+        row.push(make('i', { class: 'fa-solid fa-arrow-up-right-from-square zhs-sites__go' }));
+        box.appendChild(make('a', {
+          class: 'zhs-sites__item',
+          href: item.href,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          title: item.href
+        }, row));
+      } else {
+        box.appendChild(make('div', { class: 'zhs-sites__item is-off' }, row));
+      }
     });
+
+    if (!box.children.length) {
+      box.appendChild(make('div', { class: 'zhs-sites__empty', text: '暂无站点' }));
+    }
   }
 
   /** 品牌色 → 两套主题下都看得清的前景/背景（太亮压暗、太暗提亮） */
