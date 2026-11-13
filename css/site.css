@@ -1362,6 +1362,33 @@ a.friend:hover {
   text-decoration: none;
 }
 
+/* 页脚 GitHub 仓库入口 */
+.footer .footer-github {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 6px;
+  padding: 2px 9px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: var(--ui-card);
+  color: var(--ui-muted);
+  font-size: 11px;
+  text-decoration: none;
+  transition: color .2s ease, border-color .2s ease, background .2s ease;
+}
+
+.footer .footer-github i {
+  font-size: 13px;
+}
+
+.footer .footer-github:hover {
+  color: var(--ui-accent);
+  border-color: rgba(116, 158, 252, .45);
+  background: rgba(116, 158, 252, .1);
+  text-decoration: none;
+}
+
 .footer .footer-admin:hover {
   color: var(--ui-accent);
   text-decoration: none;
