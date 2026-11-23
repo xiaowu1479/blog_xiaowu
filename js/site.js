@@ -705,116 +705,328 @@ const SITE = {
     zoomReset();
     img.src = src;
     img.alt = caption || '';
+    const cap = $('#photoCaption');
+    if (cap) cap.textContent = caption || '';
+    const hint = $('#photoHint');
+    if (hint) {
+      const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      hint.textContent = touch
+        ? '双指或按钮缩放 · 双击放大 · 放大后拖动'
+        : '滚轮或按钮缩放 · 双击放大 · 放大后拖动';
+    }
     window.jQuery(modal).modal('show');
   }
 
   /* ---------------- 灯箱缩放 ----------------
-     图片按原图尺寸显示（上限是视口），滚轮以鼠标位置为中心缩放，
-     放大后可拖动，双击在 1 倍和 2.5 倍之间切换。 */
+     图片放在带边框的取景框里：滚轮/按钮缩放，手机双指缩放，
+     放大后单指或鼠标拖动，双击在 1 倍和 2.5 倍之间切换。 */
+  const ZOOM_MIN = 1;
   const ZOOM_MAX = 6;
-  const ZOOM_STEP = 1.18;
-  let zoom = { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0 };
+  const ZOOM_BTN_FACTOR = 1.5;
+  const ZOOM_DBL = 2.5;
+  let zoom = { scale: 1, x: 0, y: 0 };
+  let zoomPointers = new Map();
+  let zoomPan = null;
+  let zoomPinch = null;
+  let zoomPinched = false;
+  let zoomLastTap = { at: 0, x: 0, y: 0 };
+  let zoomNoClickUntil = 0;
+
+  function zoomParts() {
+    return {
+      img: $('#photoModalImg'),
+      frame: $('#photoFrame'),
+      level: $('#photoZoomLevel'),
+      out: document.querySelector('#photoModal [data-photo-action="out"]'),
+      inn: document.querySelector('#photoModal [data-photo-action="in"]')
+    };
+  }
 
   function zoomUpdate() {
-    const img = $('#photoModalImg');
+    const { img, frame, level, out, inn } = zoomParts();
     if (!img) return;
     img.style.transform = (zoom.scale === 1 && !zoom.x && !zoom.y)
       ? ''
-      : 'translate(' + zoom.x.toFixed(2) + 'px, ' + zoom.y.toFixed(2) + 'px) scale(' + zoom.scale.toFixed(3) + ')';
-    img.classList.toggle('is-zoomed', zoom.scale > 1.01);
+      : 'translate3d(' + zoom.x.toFixed(2) + 'px, ' + zoom.y.toFixed(2) + 'px, 0) scale(' + zoom.scale.toFixed(4) + ')';
+    if (frame) frame.classList.toggle('is-zoomed', zoom.scale > ZOOM_MIN + 0.001);
+    if (level) level.textContent = Math.round(zoom.scale * 100) + '%';
+    if (out) out.disabled = zoom.scale <= ZOOM_MIN + 0.001;
+    if (inn) inn.disabled = zoom.scale >= ZOOM_MAX - 0.001;
   }
 
-  // 别让图拖出屏幕太远；图片比视口大时允许看到边缘
+  // 图片比取景框大时，允许拖到看见边缘为止
   function zoomClamp() {
-    const img = $('#photoModalImg');
-    if (!img) return;
-    const body = img.closest('.modal-body');
-    const maxX = Math.max(0, (img.offsetWidth * zoom.scale - body.clientWidth) / 2 + 48);
-    const maxY = Math.max(0, (img.offsetHeight * zoom.scale - body.clientHeight) / 2 + 48);
+    const { img, frame } = zoomParts();
+    if (!img || !frame || !img.offsetWidth) return;
+    const maxX = Math.max(0, (img.offsetWidth * zoom.scale - frame.clientWidth) / 2);
+    const maxY = Math.max(0, (img.offsetHeight * zoom.scale - frame.clientHeight) / 2);
     zoom.x = Math.min(maxX, Math.max(-maxX, zoom.x));
     zoom.y = Math.min(maxY, Math.max(-maxY, zoom.y));
   }
 
   function zoomReset() {
-    zoom = { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0 };
-    const img = $('#photoModalImg');
-    if (img) img.classList.remove('is-dragging');
+    zoom = { scale: 1, x: 0, y: 0 };
+    zoomPointers.clear();
+    zoomPan = null;
+    zoomPinch = null;
+    zoomPinched = false;
+    zoomLastTap = { at: 0, x: 0, y: 0 };
+    zoomNoClickUntil = 0;
+    const { frame } = zoomParts();
+    if (frame) frame.classList.remove('is-dragging');
     zoomUpdate();
   }
 
-  function zoomTo(next, clientX, clientY) {
-    const img = $('#photoModalImg');
-    if (!img) return;
-    const s1 = Math.min(ZOOM_MAX, Math.max(1, next));
+  function zoomCenter() {
+    const frame = $('#photoFrame');
+    const r = frame.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  // 以屏幕坐标 (ax, ay) 为锚点缩放到 next，锚点下的像素保持不动
+  function zoomSet(next, ax, ay) {
+    const { img } = zoomParts();
+    if (!img || !img.offsetWidth) return;
+    const s1 = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
     const s0 = zoom.scale;
-    if (Math.abs(s1 - s0) < 0.001) return;
-    // 当前外框是缩放/平移后的，先反推出未变换时的中心，再让光标下的点保持不动
-    const r = img.getBoundingClientRect();
-    const cx = r.left + r.width / 2 - zoom.x;
-    const cy = r.top + r.height / 2 - zoom.y;
+    if (Math.abs(s1 - s0) < 0.001) {
+      if (s1 <= ZOOM_MIN + 0.001 && (zoom.x || zoom.y)) {
+        zoom.x = 0;
+        zoom.y = 0;
+        zoomUpdate();
+      }
+      return;
+    }
+    const c = zoomCenter();
     const f = s1 / s0;
-    zoom.x = (clientX - cx) - f * (clientX - cx - zoom.x);
-    zoom.y = (clientY - cy) - f * (clientY - cy - zoom.y);
+    zoom.x = (ax - c.x) - f * (ax - c.x - zoom.x);
+    zoom.y = (ay - c.y) - f * (ay - c.y - zoom.y);
     zoom.scale = s1;
-    if (s1 <= 1.001) { zoom.x = 0; zoom.y = 0; }
+    if (s1 <= ZOOM_MIN + 0.001) {
+      zoom.scale = 1;
+      zoom.x = 0;
+      zoom.y = 0;
+    }
     zoomClamp();
     zoomUpdate();
+  }
+
+  function zoomBy(factor, ax, ay) {
+    zoomSet(zoom.scale * factor, ax, ay);
+  }
+
+  function zoomPointerList() {
+    return Array.from(zoomPointers.values());
+  }
+
+  function zoomPinchStart() {
+    const pts = zoomPointerList();
+    if (pts.length < 2) return;
+    const a = pts[0];
+    const b = pts[1];
+    zoomPinch = {
+      dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+      midX: (a.x + b.x) / 2,
+      midY: (a.y + b.y) / 2,
+      scale: zoom.scale,
+      x: zoom.x,
+      y: zoom.y
+    };
+  }
+
+  function zoomPinchMove() {
+    const pts = zoomPointerList();
+    if (!zoomPinch || pts.length < 2) return;
+    const a = pts[0];
+    const b = pts[1];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2;
+    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomPinch.scale * dist / zoomPinch.dist));
+    const c = zoomCenter();
+    const f = next / zoomPinch.scale;
+    zoom.scale = next;
+    zoom.x = (midX - c.x) - f * (zoomPinch.midX - c.x - zoomPinch.x);
+    zoom.y = (midY - c.y) - f * (zoomPinch.midY - c.y - zoomPinch.y);
+    if (next <= ZOOM_MIN + 0.001) {
+      zoom.scale = 1;
+      zoom.x = 0;
+      zoom.y = 0;
+    }
+    zoomClamp();
+    zoomUpdate();
+  }
+
+  // 触屏双击：300ms 内同一位置连续两次轻点
+  function zoomTap(x, y) {
+    const now = Date.now();
+    const last = zoomLastTap;
+    if (now - last.at < 320 && Math.hypot(x - last.x, y - last.y) < 36) {
+      zoomLastTap = { at: 0, x: 0, y: 0 };
+      if (zoom.scale > ZOOM_MIN + 0.001) zoomReset();
+      else zoomSet(ZOOM_DBL, x, y);
+      // 放在复位之后：zoomReset 会清掉这个标记，避免重复触发 dblclick
+      zoomNoClickUntil = now + 400;
+    } else {
+      zoomLastTap = { at: now, x, y };
+    }
   }
 
   function initLightbox() {
     const modal = $('#photoModal');
     const img = $('#photoModalImg');
-    if (!modal || !img || modal.dataset.zoomReady) return;
+    const frame = $('#photoFrame');
+    if (!modal || !img || !frame || modal.dataset.zoomReady) return;
     modal.dataset.zoomReady = '1';
 
     img.draggable = false;
-    img.addEventListener('wheel', function (ev) {
+
+    frame.addEventListener('wheel', function (ev) {
       ev.preventDefault();   // 滚轮用来缩放，别带着页面滚
-      const factor = ev.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-      zoomTo(zoom.scale * factor, ev.clientX, ev.clientY);
+      const delta = ev.deltaMode === 1 ? ev.deltaY * 16
+        : ev.deltaMode === 2 ? ev.deltaY * 100
+        : ev.deltaY;
+      const factor = Math.exp(-Math.max(-120, Math.min(120, delta)) * 0.0022);
+      zoomBy(factor, ev.clientX, ev.clientY);
     }, { passive: false });
 
-    img.addEventListener('dblclick', function (ev) {
-      if (zoom.scale > 1.01) zoomReset();
-      else zoomTo(2.5, ev.clientX, ev.clientY);
-    });
-
-    img.addEventListener('pointerdown', function (ev) {
-      if (zoom.scale <= 1.01 || ev.button !== 0) return;
+    frame.addEventListener('dblclick', function (ev) {
+      if (Date.now() < zoomNoClickUntil) return;
       ev.preventDefault();
-      zoom.dragging = true;
-      zoom.sx = ev.clientX - zoom.x;
-      zoom.sy = ev.clientY - zoom.y;
-      img.classList.add('is-dragging');
-      try { img.setPointerCapture(ev.pointerId); } catch (e) {}
+      if (zoom.scale > ZOOM_MIN + 0.001) zoomReset();
+      else zoomSet(ZOOM_DBL, ev.clientX, ev.clientY);
     });
 
-    img.addEventListener('pointermove', function (ev) {
-      if (!zoom.dragging) return;
-      zoom.x = ev.clientX - zoom.sx;
-      zoom.y = ev.clientY - zoom.sy;
+    frame.addEventListener('pointerdown', function (ev) {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      zoomPointers.set(ev.pointerId, {
+        x: ev.clientX,
+        y: ev.clientY,
+        startX: ev.clientX,
+        startY: ev.clientY,
+        at: Date.now(),
+        moved: false
+      });
+      if (zoomPointers.size === 1) {
+        zoomPinched = false;
+        if (zoom.scale > ZOOM_MIN + 0.001) {
+          zoomPan = { sx: ev.clientX - zoom.x, sy: ev.clientY - zoom.y };
+          frame.classList.add('is-dragging');
+        } else {
+          zoomPan = null;
+        }
+      } else if (zoomPointers.size === 2) {
+        zoomPinched = true;
+        zoomPan = null;
+        zoomPinchStart();
+      }
+      try { frame.setPointerCapture(ev.pointerId); } catch (e) {}
+    });
+
+    frame.addEventListener('pointermove', function (ev) {
+      const p = zoomPointers.get(ev.pointerId);
+      if (!p) return;
+      p.x = ev.clientX;
+      p.y = ev.clientY;
+      if (!p.moved && Math.hypot(p.x - p.startX, p.y - p.startY) > 6) {
+        p.moved = true;
+        zoomNoClickUntil = Date.now() + 300;
+      }
+      if (zoomPointers.size >= 2) {
+        zoomPinchMove();
+        return;
+      }
+      if (!zoomPan || zoom.scale <= ZOOM_MIN + 0.001) return;
+      zoom.x = ev.clientX - zoomPan.sx;
+      zoom.y = ev.clientY - zoomPan.sy;
       zoomClamp();
       zoomUpdate();
     });
 
-    function stopDrag() {
-      if (!zoom.dragging) return;
-      zoom.dragging = false;
-      img.classList.remove('is-dragging');
+    function endPointer(ev) {
+      const p = zoomPointers.get(ev.pointerId);
+      if (!p) return;
+      zoomPointers.delete(ev.pointerId);
+      if (zoomPointers.size === 0) {
+        const tap = !zoomPinched && !p.moved
+          && ev.pointerType !== 'mouse'
+          && Date.now() - p.at < 300;
+        zoomPan = null;
+        zoomPinch = null;
+        frame.classList.remove('is-dragging');
+        if (tap) zoomTap(ev.clientX, ev.clientY);
+      } else if (zoomPointers.size === 1) {
+        const rest = zoomPointerList()[0];
+        zoomPinch = null;
+        zoomPan = zoom.scale > ZOOM_MIN + 0.001
+          ? { sx: rest.x - zoom.x, sy: rest.y - zoom.y }
+          : null;
+      } else if (zoomPointers.size === 2) {
+        // 三指减到两指时，按当前两指重新起算，避免缩放跳一下
+        zoomPinchStart();
+      }
     }
-    img.addEventListener('pointerup', stopDrag);
-    img.addEventListener('pointercancel', stopDrag);
+    frame.addEventListener('pointerup', endPointer);
+    frame.addEventListener('pointercancel', endPointer);
 
-    // 图片几乎铺满弹窗后，点图片周围的空白也关掉，不然只能按 Esc
+    // 工具栏：放大、缩小、复位、关闭
+    modal.addEventListener('click', function (ev) {
+      const btn = ev.target.closest && ev.target.closest('[data-photo-action]');
+      if (!btn || !modal.contains(btn)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const c = zoomCenter();
+      const action = btn.getAttribute('data-photo-action');
+      if (action === 'in') zoomBy(ZOOM_BTN_FACTOR, c.x, c.y);
+      else if (action === 'out') zoomBy(1 / ZOOM_BTN_FACTOR, c.x, c.y);
+      else if (action === 'reset') zoomReset();
+      else if (action === 'close') window.jQuery(modal).modal('hide');
+    });
+
+    // 点图片周围的空白也关掉，不然只能按 Esc
     const body = modal.querySelector('.modal-body');
     if (body) {
       body.addEventListener('click', function (ev) {
-        if (ev.target === body) window.jQuery(modal).modal('hide');
+        if (Date.now() < zoomNoClickUntil) return;
+        if (ev.target === body || ev.target.id === 'photoStage') {
+          window.jQuery(modal).modal('hide');
+        }
       });
     }
 
-    // Esc / 点遮罩关闭后复位，下次打开从 1 倍开始
-    if (window.jQuery) window.jQuery(modal).on('hidden.bs.modal', zoomReset);
+    // 键盘快捷键
+    document.addEventListener('keydown', function (ev) {
+      if (!modal.classList.contains('show')) return;
+      const c = zoomCenter();
+      if (ev.key === '+' || ev.key === '=') {
+        zoomBy(ZOOM_BTN_FACTOR, c.x, c.y);
+        ev.preventDefault();
+      } else if (ev.key === '-' || ev.key === '_') {
+        zoomBy(1 / ZOOM_BTN_FACTOR, c.x, c.y);
+        ev.preventDefault();
+      } else if (ev.key === '0') {
+        zoomReset();
+        ev.preventDefault();
+      }
+    });
+
+    window.addEventListener('resize', function () {
+      if (!modal.classList.contains('show')) return;
+      zoomClamp();
+      zoomUpdate();
+    });
+
+    // 灯箱打开时把遮罩压暗一点，正文和图片都更清楚
+    if (window.jQuery) {
+      window.jQuery(modal).on('show.bs.modal', function () {
+        document.body.classList.add('photo-modal-open');
+      });
+      // Esc / 点遮罩关闭后复位，下次打开从 1 倍开始
+      window.jQuery(modal).on('hidden.bs.modal', function () {
+        document.body.classList.remove('photo-modal-open');
+        zoomReset();
+      });
+    }
   }
 
   initLightbox();
@@ -829,7 +1041,12 @@ const SITE = {
     if (img.closest('a')) return;
     const src = img.currentSrc || img.src;
     if (!src) return;
-    openLightbox(src, img.alt || '');
+    // 很多编辑器把 alt 填成文件名，这种就不当成图注显示
+    const alt = (img.alt || '').trim();
+    let name = (src.split(/[?#]/)[0].split('/').pop() || '');
+    try { name = decodeURIComponent(name); } catch (e) {}
+    const file = name.replace(/\.[^.]+$/, '');
+    openLightbox(src, alt && alt !== file && alt !== name ? alt : '');
   });
 
   function friendAvatar(f, i) {

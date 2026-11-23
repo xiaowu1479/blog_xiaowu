@@ -1782,7 +1782,7 @@ a.zhs-sites__item:hover .zhs-sites__go {
   margin-bottom: 8px;
 }
 
-/* 图片灯箱：接近全屏，能滚轮缩放、放大后拖动 */
+/* 图片灯箱：带边框的取景框 + 缩放按钮，支持滚轮、双指和拖动 */
 #photoModal .modal-dialog {
   max-width: min(96vw, 1600px);
   margin: 1rem auto;
@@ -1794,56 +1794,187 @@ a.zhs-sites__item:hover .zhs-sites__go {
   box-shadow: none;
 }
 
+/* 灯箱打开时把 Bootstrap 遮罩压暗，避免正文透过操作栏 */
+body.photo-modal-open .modal-backdrop.show {
+  opacity: .82;
+}
+
 #photoModal .modal-body {
   padding: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  gap: 10px;
+  touch-action: none;   /* 灯箱内统一接管手势，别让页面跟着缩放 */
 }
 
-#photoModal img {
+/* 图片被外框裁切，缩放和平移都发生在框内 */
+#photoModal .photo-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+}
+
+#photoModal .photo-frame {
+  position: relative;
+  max-width: 100%;
+  overflow: hidden;
+  line-height: 0;
+  border: 1px solid rgba(255, 255, 255, .45);
+  border-radius: 10px;
+  background: #0b0d10;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 18px 60px rgba(0, 0, 0, .55);
+  touch-action: none;   /* 双指缩放由脚本接管，避免页面跟着滚动/缩放 */
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#photoModal .photo-frame.is-zoomed {
+  cursor: grab;
+}
+
+#photoModal .photo-frame.is-dragging {
+  cursor: grabbing;
+}
+
+#photoModal .photo-frame img {
   display: block;
   width: auto;
   height: auto;
-  max-width: calc(96vw - 8px);
-  max-height: calc(100vh - 4rem);
-  border-radius: var(--ui-radius);
-  cursor: zoom-in;
+  max-width: min(calc(96vw - 2rem), 1560px);
+  max-height: calc(100vh - 11.5rem);
+  max-height: calc(100dvh - 11.5rem);
+  border-radius: 0;   /* 圆角交给外框，缩放时不会被裁成椭圆 */
+  cursor: inherit;
   user-select: none;
+  -webkit-user-select: none;
   -webkit-user-drag: none;
+  -webkit-touch-callout: none;
   transform-origin: center center;
   will-change: transform;
 }
 
-#photoModal img.is-zoomed {
-  cursor: grab;
-  touch-action: none;   /* 放大后拖动图片而不是滚页面；未放大时仍可用系统双指缩放 */
+#photoModal .photo-caption {
+  max-width: min(90vw, 900px);
+  margin: 0;
+  color: rgba(255, 255, 255, .86);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
 }
 
-#photoModal img.is-dragging {
-  cursor: grabbing;
+#photoModal .photo-caption:empty {
+  display: none;
 }
 
-/* 操作提示；手机上没滚轮就不显示 */
-#photoModal .modal-body::after {
-  content: "滚轮 / 双击缩放 · 放大后拖动";
-  position: fixed;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
-  padding: 4px 12px;
+#photoModal .photo-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, .16);
   border-radius: 999px;
-  background: rgba(0, 0, 0, .5);
-  color: rgba(255, 255, 255, .85);
+  background: rgba(18, 20, 24, .86);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .4);
+  color: #fff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  user-select: none;
+}
+
+#photoModal .photo-btn,
+#photoModal .photo-level {
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color .15s ease, opacity .15s ease;
+}
+
+#photoModal .photo-btn {
+  width: 36px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+#photoModal .photo-level {
+  min-width: 58px;
+  padding: 0 8px;
   font-size: 12px;
-  white-space: nowrap;
-  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+#photoModal .photo-btn:hover,
+#photoModal .photo-level:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+#photoModal .photo-btn:active,
+#photoModal .photo-level:active {
+  background: rgba(255, 255, 255, .2);
+}
+
+#photoModal .photo-btn:disabled {
+  opacity: .3;
+  cursor: default;
+  background: transparent;
+}
+
+#photoModal .photo-btn:focus-visible,
+#photoModal .photo-level:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, .75);
+  outline-offset: 2px;
+}
+
+#photoModal .photo-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: rgba(255, 255, 255, .18);
+}
+
+#photoModal .photo-btn-close {
+  color: #ffb3b3;
+}
+
+#photoModal .photo-hint {
+  margin: -2px 0 0;
+  color: rgba(255, 255, 255, .55);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 @media (max-width: 575px) {
-  #photoModal .modal-body::after {
-    display: none;
+  #photoModal .modal-body {
+    gap: 8px;
+  }
+
+  #photoModal .photo-frame img {
+    max-width: calc(100vw - 1.5rem);
+    max-height: calc(100vh - 12.5rem);
+    max-height: calc(100dvh - 12.5rem);
+  }
+
+  #photoModal .photo-btn {
+    width: 42px;
+    height: 42px;
+  }
+
+  #photoModal .photo-level {
+    height: 42px;
+    min-width: 64px;
   }
 }
 

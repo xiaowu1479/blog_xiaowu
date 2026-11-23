@@ -320,7 +320,20 @@
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-body">
-          <img id="photoModalImg" alt="">
+          <div class="photo-stage" id="photoStage">
+            <div class="photo-frame" id="photoFrame">
+              <img id="photoModalImg" alt="" draggable="false">
+            </div>
+          </div>
+          <p class="photo-caption" id="photoCaption"></p>
+          <div class="photo-toolbar" role="toolbar" aria-label="图片缩放控制">
+            <button type="button" class="photo-btn" data-photo-action="out" aria-label="缩小" title="缩小">−</button>
+            <button type="button" class="photo-level" id="photoZoomLevel" data-photo-action="reset" aria-label="恢复原始大小" title="恢复原始大小">100%</button>
+            <button type="button" class="photo-btn" data-photo-action="in" aria-label="放大" title="放大">+</button>
+            <span class="photo-sep" aria-hidden="true"></span>
+            <button type="button" class="photo-btn photo-btn-close" data-photo-action="close" aria-label="关闭" title="关闭">✕</button>
+          </div>
+          <p class="photo-hint" id="photoHint"></p>
         </div>
       </div>
     </div>
