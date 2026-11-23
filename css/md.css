@@ -81,6 +81,11 @@
   vertical-align: middle;
 }
 
+/* 博客正文图片点击放大（js/site.js 里委托到 #photoModal） */
+.article-body img {
+  cursor: zoom-in;
+}
+
 .md-body hr {
   height: 1px;
   margin: 1.7em 0;

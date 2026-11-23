@@ -702,10 +702,135 @@ const SITE = {
     const modal = $('#photoModal');
     const img = $('#photoModalImg');
     if (!modal || !img || !window.jQuery) return;
+    zoomReset();
     img.src = src;
     img.alt = caption || '';
     window.jQuery(modal).modal('show');
   }
+
+  /* ---------------- 灯箱缩放 ----------------
+     图片按原图尺寸显示（上限是视口），滚轮以鼠标位置为中心缩放，
+     放大后可拖动，双击在 1 倍和 2.5 倍之间切换。 */
+  const ZOOM_MAX = 6;
+  const ZOOM_STEP = 1.18;
+  let zoom = { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0 };
+
+  function zoomUpdate() {
+    const img = $('#photoModalImg');
+    if (!img) return;
+    img.style.transform = (zoom.scale === 1 && !zoom.x && !zoom.y)
+      ? ''
+      : 'translate(' + zoom.x.toFixed(2) + 'px, ' + zoom.y.toFixed(2) + 'px) scale(' + zoom.scale.toFixed(3) + ')';
+    img.classList.toggle('is-zoomed', zoom.scale > 1.01);
+  }
+
+  // 别让图拖出屏幕太远；图片比视口大时允许看到边缘
+  function zoomClamp() {
+    const img = $('#photoModalImg');
+    if (!img) return;
+    const body = img.closest('.modal-body');
+    const maxX = Math.max(0, (img.offsetWidth * zoom.scale - body.clientWidth) / 2 + 48);
+    const maxY = Math.max(0, (img.offsetHeight * zoom.scale - body.clientHeight) / 2 + 48);
+    zoom.x = Math.min(maxX, Math.max(-maxX, zoom.x));
+    zoom.y = Math.min(maxY, Math.max(-maxY, zoom.y));
+  }
+
+  function zoomReset() {
+    zoom = { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0 };
+    const img = $('#photoModalImg');
+    if (img) img.classList.remove('is-dragging');
+    zoomUpdate();
+  }
+
+  function zoomTo(next, clientX, clientY) {
+    const img = $('#photoModalImg');
+    if (!img) return;
+    const s1 = Math.min(ZOOM_MAX, Math.max(1, next));
+    const s0 = zoom.scale;
+    if (Math.abs(s1 - s0) < 0.001) return;
+    // 当前外框是缩放/平移后的，先反推出未变换时的中心，再让光标下的点保持不动
+    const r = img.getBoundingClientRect();
+    const cx = r.left + r.width / 2 - zoom.x;
+    const cy = r.top + r.height / 2 - zoom.y;
+    const f = s1 / s0;
+    zoom.x = (clientX - cx) - f * (clientX - cx - zoom.x);
+    zoom.y = (clientY - cy) - f * (clientY - cy - zoom.y);
+    zoom.scale = s1;
+    if (s1 <= 1.001) { zoom.x = 0; zoom.y = 0; }
+    zoomClamp();
+    zoomUpdate();
+  }
+
+  function initLightbox() {
+    const modal = $('#photoModal');
+    const img = $('#photoModalImg');
+    if (!modal || !img || modal.dataset.zoomReady) return;
+    modal.dataset.zoomReady = '1';
+
+    img.draggable = false;
+    img.addEventListener('wheel', function (ev) {
+      ev.preventDefault();   // 滚轮用来缩放，别带着页面滚
+      const factor = ev.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+      zoomTo(zoom.scale * factor, ev.clientX, ev.clientY);
+    }, { passive: false });
+
+    img.addEventListener('dblclick', function (ev) {
+      if (zoom.scale > 1.01) zoomReset();
+      else zoomTo(2.5, ev.clientX, ev.clientY);
+    });
+
+    img.addEventListener('pointerdown', function (ev) {
+      if (zoom.scale <= 1.01 || ev.button !== 0) return;
+      ev.preventDefault();
+      zoom.dragging = true;
+      zoom.sx = ev.clientX - zoom.x;
+      zoom.sy = ev.clientY - zoom.y;
+      img.classList.add('is-dragging');
+      try { img.setPointerCapture(ev.pointerId); } catch (e) {}
+    });
+
+    img.addEventListener('pointermove', function (ev) {
+      if (!zoom.dragging) return;
+      zoom.x = ev.clientX - zoom.sx;
+      zoom.y = ev.clientY - zoom.sy;
+      zoomClamp();
+      zoomUpdate();
+    });
+
+    function stopDrag() {
+      if (!zoom.dragging) return;
+      zoom.dragging = false;
+      img.classList.remove('is-dragging');
+    }
+    img.addEventListener('pointerup', stopDrag);
+    img.addEventListener('pointercancel', stopDrag);
+
+    // 图片几乎铺满弹窗后，点图片周围的空白也关掉，不然只能按 Esc
+    const body = modal.querySelector('.modal-body');
+    if (body) {
+      body.addEventListener('click', function (ev) {
+        if (ev.target === body) window.jQuery(modal).modal('hide');
+      });
+    }
+
+    // Esc / 点遮罩关闭后复位，下次打开从 1 倍开始
+    if (window.jQuery) window.jQuery(modal).on('hidden.bs.modal', zoomReset);
+  }
+
+  initLightbox();
+
+  /* 博客正文的图片也能点开看大图。
+     正文是异步渲染的，而且局部换页会整块替换，所以用 document 级事件委托。
+     图片本身在链接里时不抢跳转（Markdown 里可能写成 [![图](a)](b)）。 */
+  document.addEventListener('click', function (ev) {
+    const img = ev.target;
+    if (!img || img.tagName !== 'IMG') return;
+    if (!img.closest('#articleBody, .article-body, .md-body')) return;
+    if (img.closest('a')) return;
+    const src = img.currentSrc || img.src;
+    if (!src) return;
+    openLightbox(src, img.alt || '');
+  });
 
   function friendAvatar(f, i) {
     const ava = make('div', { class: 'friend-ava qk-' + (i % 6) });
